@@ -13,6 +13,10 @@ amount_std: 40.0
 
 # Output directory (often overridden by paths.yaml data.raw)
 output_path: "data/raw"
+# Raw write mode:
+# - overwrite: replace prior JSONL files with a clean transactions.jsonl
+# - append: keep timestamped files for historical runs
+raw_write_mode: "overwrite"
 
 # Merchant categories and weights (retail 40%, food 25%, travel 15%, other 20%)
 merchant_categories:
@@ -25,6 +29,7 @@ merchant_categories:
 geo_center_lat: 40.0
 geo_center_lon: -74.0
 geo_std: 0.5
+normal_min_minutes_between_transactions: 30
 
 # Impossible travel: min minutes between two locations (or max speed km/h)
 min_minutes_between_locations: 120  # 2h for same card at distant points

@@ -24,6 +24,7 @@ All generated records share the same flat schema. Types and names must match wha
 | `latitude`        | float   | Merchant latitude. Normal: Gaussian per card “region.” Anomaly: impossible travel uses distant point. |
 | `longitude`       | float   | Merchant longitude. Same as latitude. |
 | `anomaly_type`    | string  | `"none"` for normal; `"impossible_travel"` or `"spending_spike"` for anomalies (for evaluation only; do not use at train time). |
+| `ref_transaction_id` | string/null | Reference transaction for impossible-travel pairs; null for normal and spending-spike rows. |
 
 Optional columns (can be added later without breaking ingest if they are optional in Bronze): e.g. `merchant_id`, `currency`.
 
@@ -65,8 +66,8 @@ Anomaly records must have `anomaly_type` set to `"impossible_travel"` or `"spend
 ## 5. Output format
 
 - **Format:** JSON Lines (`.jsonl`): one JSON object per line, UTF-8 encoded. Each line is a single transaction; no outer array.
-- **Path:** From config (e.g. `data.raw` in `config/paths.yaml`). Generator writes one or more files under that directory.
-- **Naming:** Optional: `transactions_<run_id>.jsonl` or `transactions_<date>.jsonl` so multiple runs do not overwrite. Run ID or date can come from config or current time.
+- **Path:** From config (e.g. `data.raw` in `config/paths.yaml`). Generator writes under that directory.
+- **Naming:** Default mode is a clean overwrite to `transactions.jsonl` so each run produces one self-contained raw dataset. Optional append mode can keep `transactions_<run_id>.jsonl` history when explicitly enabled.
 - **Order:** No strict requirement; can be by event_time or by generation order. Downstream Bronze can sort if needed.
 
 ---
@@ -86,8 +87,11 @@ Parameters the generator reads (from `config/synthetic.yaml` or a dedicated sect
 | `amount_mean`     | float  | Mean of Gaussian for normal amount. |
 | `amount_std`      | float  | Std of Gaussian for normal amount. |
 | `output_path`     | string | Directory to write JSONL files (can override from paths.yaml). |
+| `raw_write_mode`  | string | `"overwrite"` for a clean raw dataset per run, or `"append"` to keep timestamped raw files. |
 
 Optional later: `merchant_categories` (list and weights), `geo_center` and `geo_std` for lat/long, `max_speed_kmh` for impossible travel, `spike_amount_multiplier` for spending spikes.
+
+For label quality, normal same-card events should also respect a configurable minimum time gap so unlabeled rows do not routinely create impossible-looking speeds on their own.
 
 ---
 

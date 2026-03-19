@@ -202,6 +202,7 @@ def run(
         "latitude",
         "longitude",
         "anomaly_type",
+        "ref_transaction_id",
         "ingestion_timestamp",
         "source_path",
         *feature_cols,
@@ -209,4 +210,3 @@ def run(
 
     df_gold.write.mode("overwrite").parquet(gold_path)
     return df_gold
-

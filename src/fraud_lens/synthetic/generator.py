@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import math
 import random
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -64,6 +64,8 @@ class GeneratorConfig:
     min_distance_km_impossible_travel: float
     spike_amount_multiplier: float
     impossible_travel_fraction: float
+    raw_write_mode: str
+    normal_min_minutes_between_transactions: int
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> GeneratorConfig:
@@ -92,6 +94,8 @@ class GeneratorConfig:
             min_distance_km_impossible_travel=float(d.get("min_distance_km_impossible_travel", 500.0)),
             spike_amount_multiplier=float(d.get("spike_amount_multiplier", 5.0)),
             impossible_travel_fraction=float(d.get("impossible_travel_fraction", DEFAULT_IMPOSSIBLE_TRAVEL_FRACTION)),
+            raw_write_mode=str(d.get("raw_write_mode", "overwrite")),
+            normal_min_minutes_between_transactions=int(d.get("normal_min_minutes_between_transactions", 30)),
         )
 
 
@@ -163,6 +167,29 @@ def _parse_iso(s: str) -> datetime:
 def _format_iso(dt: datetime) -> str:
     """Format datetime to ISO-8601 string."""
     return dt.strftime("%Y-%m-%dT%H:%M:%S") + "Z"
+
+
+def _enforce_min_gap_by_card(
+    transactions: list[Transaction], min_gap_minutes: int
+) -> None:
+    """Shift normal per-card events forward so speed features stay realistic for non-travel rows."""
+    if min_gap_minutes <= 0:
+        return
+
+    min_gap = timedelta(minutes=min_gap_minutes)
+    by_card: dict[str, list[Transaction]] = {}
+    for tx in transactions:
+        by_card.setdefault(tx.card_id, []).append(tx)
+
+    for card_transactions in by_card.values():
+        card_transactions.sort(key=lambda tx: (tx.event_time, tx.transaction_id))
+        prev_dt: datetime | None = None
+        for tx in card_transactions:
+            tx_dt = _parse_iso(tx.event_time)
+            if prev_dt is not None and tx_dt < prev_dt + min_gap:
+                tx_dt = prev_dt + min_gap
+                tx.event_time = _format_iso(tx_dt)
+            prev_dt = tx_dt
 
 
 def generate(config: GeneratorConfig, run_id: str | None = None) -> list[Transaction]:
@@ -237,6 +264,10 @@ def generate(config: GeneratorConfig, run_id: str | None = None) -> list[Transac
             )
         )
 
+    _enforce_min_gap_by_card(
+        transactions, config.normal_min_minutes_between_transactions
+    )
+
     # Impossible travel: add extra rows (same card, few minutes later, far location)
     by_card: dict[str, list[Transaction]] = {}
     for tx in transactions:
@@ -282,12 +313,29 @@ def generate(config: GeneratorConfig, run_id: str | None = None) -> list[Transac
     return transactions
 
 
-def write_jsonl(transactions: list[Transaction], output_path: str | Path, run_id: str | None = None) -> Path:
+def _clear_existing_jsonl(output_path: Path) -> None:
+    """Remove prior JSONL outputs so each overwrite-mode run starts clean."""
+    for existing in output_path.glob("*.jsonl"):
+        existing.unlink()
+
+
+def write_jsonl(
+    transactions: list[Transaction],
+    output_path: str | Path,
+    run_id: str | None = None,
+    write_mode: str = "overwrite",
+) -> Path:
     """Write transactions to a JSONL file under output_path. Returns path to written file."""
     out = Path(output_path)
     out.mkdir(parents=True, exist_ok=True)
     run_id = run_id or datetime.utcnow().strftime("%Y%m%d_%H%M%S")
-    filepath = out / f"transactions_{run_id}.jsonl"
+    if write_mode == "overwrite":
+        _clear_existing_jsonl(out)
+        filepath = out / "transactions.jsonl"
+    elif write_mode == "append":
+        filepath = out / f"transactions_{run_id}.jsonl"
+    else:
+        raise ValueError(f"Unsupported raw_write_mode: {write_mode}")
     with open(filepath, "w", encoding="utf-8") as f:
         for tx in transactions:
             f.write(tx.to_json_line() + "\n")
@@ -305,4 +353,9 @@ def run(
     config = load_config(config_path=config_path, paths_yaml=paths_yaml)
     run_id = run_id or datetime.utcnow().strftime("%Y%m%d_%H%M%S")
     transactions = generate(config, run_id=run_id)
-    return write_jsonl(transactions, config.output_path, run_id=run_id)
+    return write_jsonl(
+        transactions,
+        config.output_path,
+        run_id=run_id,
+        write_mode=config.raw_write_mode,
+    )
