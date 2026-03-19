@@ -1,129 +1,116 @@
 # Sparkov Benchmark Plan
 
-This document defines how FraudLens will use the Sparkov credit card fraud dataset as the primary benchmark for evaluating the medallion pipeline and fraud features.
+This document defines how FraudLens uses Sparkov as the default benchmark dataset.
 
-Synthetic data still stays in the repo, but it becomes a supporting fixture rather than the main source of truth for feature quality.
-
-## Why Sparkov
-
-Sparkov is the best near-term fit for FraudLens because it already contains the fields our pipeline expects or can derive cleanly:
-
-- transaction timestamp
-- card identifier
-- amount
-- merchant category
-- merchant latitude and longitude
-- fraud label
-
-Compared with the current synthetic generator, Sparkov gives us a richer and more realistic transaction table without forcing a redesign of the Bronze, Silver, and Gold layers.
+For layer responsibilities and the authoritative Silver contract, see [medallion_layers.md](medallion_layers.md).
 
 ## Role in the Project
 
-Use Sparkov as the primary benchmark for:
+Use Sparkov as the primary dataset for:
 
-- evaluating whether Gold features separate suspicious behavior from normal behavior
-- validating row counts and schema handling across Bronze, Silver, and Gold
-- grounding notebook diagnostics in a more realistic transaction distribution
+- feature design
+- scaling and pipeline validation
+- notebook exploration
+- benchmark evaluation of fraud vs non-fraud separation
 
 Keep synthetic data for:
 
-- end-to-end pipeline smoke tests
-- controlled anomaly injection
-- regression checks on impossible-travel and spending-spike logic
+- smoke tests
+- regression checks
+- explicit impossible-travel and spending-spike validation
 
-## Planned Dataset Positioning
+## Why Sparkov Fits
 
-- **Primary benchmark:** Sparkov
-- **Secondary fixture:** internal synthetic generator output
+Sparkov already provides the core fields needed by FraudLens:
 
-This means future feature decisions should be justified on Sparkov first, then checked against synthetic data for controlled edge cases.
+- transaction identifier
+- card identifier
+- transaction time
+- amount
+- merchant category
+- merchant coordinates
+- fraud label
 
-## Sparkov to FraudLens Schema Mapping
+It also provides useful benchmark-only fields such as merchant identity, customer coordinates, and source unix timestamps.
 
-Sparkov columns map into the current transaction model as follows.
+## Source to Canonical Mapping
 
 | FraudLens column | Sparkov source | Notes |
 |---|---|---|
-| `transaction_id` | `trans_num` | Use the original transaction identifier directly. |
-| `card_id` | `cc_num` | Cast to string in Silver for consistency with existing pipeline behavior. |
-| `event_time` | `trans_date_trans_time` | Normalize to ISO-8601 string format. |
+| `transaction_id` | `trans_num` | Preserve original transaction identifier. |
+| `card_id` | `cc_num` | Cast to string for consistency. |
+| `event_time` | `unix_time` | Default canonical timestamp source; formatted to ISO-8601. |
 | `amount` | `amt` | Direct mapping. |
 | `merchant_category` | `category` | Direct mapping. |
-| `latitude` | `merch_lat` | Use merchant location for travel features. |
-| `longitude` | `merch_long` | Use merchant location for travel features. |
-| `anomaly_type` | derived from `is_fraud` | Initial plan: map `1 -> "fraud"` and `0 -> "none"` for benchmark runs. |
-| `ref_transaction_id` | not present | Set to `NULL` for Sparkov-based Bronze/Silver/Gold runs. |
+| `latitude` | `merch_lat` | Merchant latitude. |
+| `longitude` | `merch_long` | Merchant longitude. |
+| `anomaly_type` | derived from `is_fraud` | Current benchmark compatibility label: `fraud` or `none`. |
+| `ref_transaction_id` | not present | Keep null for benchmark runs. |
 
-Additional Sparkov fields should be preserved in Bronze where useful, then either:
-
-- carried through Silver if we decide they support future features, or
-- documented as optional benchmark-only columns if they are not yet used downstream
-
-Examples of useful optional Sparkov fields:
+Current benchmark passthrough fields retained for downstream Gold:
 
 - `merchant`
-- `unix_time`
-- `lat` and `long` for customer location
-- `city`, `state`, `zip`
-- `city_pop`
-- `job`
 - `is_fraud`
+- `customer_latitude`
+- `customer_longitude`
+- `event_time_unix`
 
-## Design Decisions
+## Design Notes
 
-### Merchant coordinates drive travel features
+### Merchant coordinates remain the shared location fields
 
-For Sparkov, Gold should compute `distance_from_prev_km` and `speed_from_prev_kmh` using merchant coordinates:
+The canonical `latitude` and `longitude` columns represent merchant coordinates for Sparkov-based runs.
 
-- `latitude <- merch_lat`
-- `longitude <- merch_long`
+This keeps shared Gold location logic stable while allowing benchmark-specific geography features to use:
 
-This keeps Gold behavior aligned with how travel is interpreted in FraudLens.
+- merchant coordinates from `latitude`, `longitude`
+- customer home coordinates from `customer_latitude`, `customer_longitude`
 
-### Fraud labels are not impossible-travel labels
+### Fraud labels are benchmark labels, not synthetic anomaly labels
 
-Sparkov does not provide a specific impossible-travel label. Because of that:
+Sparkov does not encode explicit impossible-travel or spending-spike labels.
 
-- `anomaly_type = "fraud"` should be treated as a generic fraud benchmark label
-- impossible-travel notebook checks should remain available, but we should not assume Sparkov fraud labels are travel fraud labels
-- synthetic data remains the controlled dataset for explicit impossible-travel evaluation
+That means:
 
-### `ref_transaction_id` remains synthetic-only for now
+- `anomaly_type = "fraud"` is only a generic fraud compatibility label
+- `is_fraud` is the more precise benchmark evaluation field
+- synthetic anomaly checks stay separate
 
-Sparkov has no direct equivalent to `ref_transaction_id`, so:
+### Keep one shared pipeline shape
 
-- Bronze and Silver should allow the column to be null
-- Gold should preserve it as null on benchmark runs
-- notebook checks should treat non-null `ref_transaction_id` as synthetic-only coverage, not as a universal expectation
+FraudLens should keep:
 
-## Planned Ingestion Approach
+- shared Bronze ingestion contract
+- shared Silver cleaning contract
+- shared baseline Gold features
+- Sparkov-specific Gold extensions for benchmark-aware features
 
-Add a dedicated Sparkov ingestion path rather than forcing benchmark data through the synthetic generator flow.
+This avoids forking the whole medallion system.
 
-Recommended shape:
+## Current Implementation State
 
-1. Raw benchmark files live in a separate configured input location.
-2. A Sparkov-specific Bronze ingestion step maps the source columns into the FraudLens raw transaction schema.
-3. Silver and Gold continue to work from the canonical schema, with only small adjustments for benchmark-specific nullability and labels.
+Implemented:
 
-This keeps the medallion contract stable while making room for richer upstream sources.
+- Sparkov download helper
+- Sparkov normalization into canonical raw records
+- Sparkov Bronze, Silver, and Gold pipeline run
+- benchmark passthrough columns preserved through Silver and Gold
 
-## Implementation Checklist
+Observed benchmark state:
 
-1. Add config for Sparkov raw input and normalized Bronze target paths.
-2. Implement a Sparkov ingestion module that maps source columns into the FraudLens canonical transaction schema.
-3. Decide which optional Sparkov columns should remain available beyond Bronze.
-4. Confirm Silver validation rules still make sense when `anomaly_type` is generic fraud instead of synthetic anomaly subtype.
-5. Run Bronze, Silver, and Gold on Sparkov-derived data.
-6. Update the notebook so benchmark-mode checks emphasize:
-   - row counts
-   - schema consistency
-   - fraud vs non-fraud feature separation
-   - travel-feature distributions without assuming fraud equals impossible travel
-7. Keep synthetic notebook checks for explicit impossible-travel and spending-spike validation.
+- normalized raw rows: 8,580,255
+- Gold rows: 8,580,255
+- fraud rows: 94,806
+- non-fraud rows: 8,485,449
 
-## Open Questions
+## Next Feature-Oriented Requirements
 
-- Do we want benchmark fraud labels represented as `"fraud"` or as a separate `label` column while leaving `anomaly_type` synthetic-only?
-- Which Sparkov columns should be preserved for future models without bloating the canonical transaction schema?
-- Should we support mixed benchmark and synthetic runs in the same repo at the same time, or keep them as separate configured workflows?
+The current Silver contract is enough to support the next Gold expansion:
+
+- prior-only customer amount z-score
+- customer-to-merchant distance
+- time-of-day and weekend features
+- richer velocity windows
+- merchant frequency and merchant fraud-rate windows
+
+Anything beyond that, especially profile or demographic features, should be added intentionally rather than by default.

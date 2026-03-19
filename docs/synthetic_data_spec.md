@@ -1,12 +1,20 @@
-# Synthetic data spec — FraudLens
+# Synthetic Data Spec
 
-Detailed specification for the synthetic transaction generator. Used by the **Synthetic data generator** workstream (see [AGENTS.md](AGENTS.md#1-synthetic-data-generator)). Bronze ingest and Silver schema must align with this spec.
+Detailed specification for the synthetic transaction generator. Use this for fixture generation, regression checks, and explicit anomaly validation.
+
+For the main layer contract, see [medallion_layers.md](medallion_layers.md).
 
 ---
 
 ## 1. Purpose
 
-Generate synthetic credit card transaction data for development and testing. Normal behavior is produced with **Gaussian (normal) distributions** so the downstream ML pipeline has realistic clusters to learn. A small fraction of records are **anomalies** (Flash Fraud: impossible travel or spending spikes) for ML validation. Output is raw JSON Lines written to a configured path (e.g. `data/raw/`) for Bronze ingest.
+Generate synthetic credit card transaction data for development and testing. Normal behavior is produced with **Gaussian (normal) distributions** so the downstream ML pipeline has realistic clusters to learn. A small fraction of records are **anomalies** (Flash Fraud: impossible travel or spending spikes) for controlled validation. Output is raw JSON Lines written to a configured path (e.g. `data/raw/`) for Bronze ingest.
+
+Synthetic data is no longer the primary analysis dataset for FraudLens. Its role is:
+
+- controlled edge-case generation
+- regression testing
+- smoke-test sized pipeline validation
 
 ---
 
@@ -122,7 +130,9 @@ For label quality, normal same-card events should also respect a configurable mi
 ## 8. Alignment with downstream
 
 - **Bronze:** Ingest reads these JSONL files; can add `ingestion_timestamp`, `source_path`. Schema-on-read: same column names and types as above.
-- **Silver:** Clean and type; enforce the same column names and types; handle nulls/duplicates. No new columns required for v1; optional `ingestion_timestamp` from Bronze.
+- **Silver:** Clean and type; enforce the same shared columns and allow nullable passthrough fields used by benchmark data.
 - **Gold:** Will add features (e.g. velocity, time since last tx, distance) from this schema; `event_time`, `card_id`, `latitude`, `longitude`, `amount` are the inputs for that.
 
 Implement the generator in `src/fraud_lens/synthetic/` and drive it via config and a script or CLI entrypoint.
+
+Use Sparkov, not synthetic data, as the default dataset for feature evaluation and exploratory analysis.

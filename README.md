@@ -1,14 +1,20 @@
 # FraudLens
 
-Distributed credit card fraud detection: PySpark, medallion architecture (Bronze → Silver → Gold), and ML for "Flash Fraud" (impossible travel, spending spikes).
+Distributed credit card fraud detection: PySpark, medallion architecture (Bronze → Silver → Gold), and ML-oriented transaction feature engineering.
 
 Current focus:
 
-- Synthetic dataset support for pipeline development and controlled anomaly tests
-- Sparkov benchmark integration for more realistic feature evaluation
+- Sparkov benchmark analysis as the default dataset path
+- Synthetic dataset support as a smaller controlled test fixture
 - Spark environment and data processing pipeline
 
 ML and the LLM Auto-Investigator come later.
+
+## Current Direction
+
+- Sparkov benchmark analysis is the default dataset path.
+- Synthetic data remains a smaller controlled fixture for regression tests, smoke tests, and explicit anomaly validation.
+- Feature extraction belongs primarily in the Gold layer, after Bronze ingestion and Silver cleaning.
 
 ## Repo layout
 
@@ -16,8 +22,10 @@ ML and the LLM Auto-Investigator come later.
 - `data/` — Bronze, Silver, Gold layers
 - `src/fraud_lens/` — Ingest, Bronze→Silver, Silver→Gold, synthetic generator
 - `scripts/` — Pipeline runners
-- `docs/AGENTS.md` — Task briefs per workstream
-- `docs/sparkov_benchmark_plan.md` — Sparkov benchmark dataset plan and schema mapping
+- `docs/AGENTS.md` — Short contributor orientation
+- `docs/medallion_layers.md` — Layer responsibilities and the current Silver contract
+- `docs/sparkov_benchmark_plan.md` — Sparkov dataset role and source-to-canonical mapping
+- `docs/sparkov_feature_roadmap.md` — Next Sparkov-aware Gold feature families
 
 ## Setup
 
@@ -33,10 +41,15 @@ Run (when implemented): `python scripts/run_pipeline.py`
 
 FraudLens now uses two complementary data paths:
 
-- **Synthetic data** for controlled pipeline validation, anomaly injection, and regression testing
-- **Sparkov benchmark data** as the primary dataset for evaluating whether Bronze, Silver, Gold, and the engineered fraud features behave credibly on richer transaction records
+- **Sparkov benchmark data** as the default dataset for feature design, scaling checks, and exploratory analysis
+- **Synthetic data** as a smaller controlled fixture for pipeline validation, regression tests, and explicitly constructed anomaly cases
 
-The Sparkov consolidation plan lives in [docs/sparkov_benchmark_plan.md](docs/sparkov_benchmark_plan.md).
+The project contract and recommended reading order are:
+
+1. [docs/medallion_layers.md](docs/medallion_layers.md)
+2. [docs/sparkov_benchmark_plan.md](docs/sparkov_benchmark_plan.md)
+3. [docs/sparkov_feature_findings.md](docs/sparkov_feature_findings.md)
+4. [docs/sparkov_feature_roadmap.md](docs/sparkov_feature_roadmap.md)
 
 ## Benchmark Workflow
 
@@ -59,3 +72,15 @@ python scripts/run_sparkov_pipeline.py
 ```
 
 By default these scripts read and write the paths configured in [config/sparkov.yaml](config/sparkov.yaml), downloading the source CSV to `data/benchmark/sparkov/data.csv`, writing canonical JSON records to `data/raw_sparkov`, and writing benchmark Bronze/Silver/Gold outputs under `data/benchmark/`.
+
+## Synthetic Workflow
+
+Synthetic data is still useful, but it is no longer the primary analysis path.
+
+Use it when you need:
+
+- deterministic small-scale regression checks
+- controlled impossible-travel or spending-spike examples
+- fast pipeline smoke tests
+
+The synthetic generator spec lives in [docs/synthetic_data_spec.md](docs/synthetic_data_spec.md).

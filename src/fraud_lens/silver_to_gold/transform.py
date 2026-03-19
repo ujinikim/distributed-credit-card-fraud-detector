@@ -65,10 +65,16 @@ def run(
 
     df = spark.read.parquet(silver_path)
 
-    # Parse event_time string to timestamp and a seconds-since-epoch column for window ranges.
-    df = df.withColumn(
-        "event_time_ts", F.to_timestamp("event_time")
-    ).withColumn("event_time_unix", F.col("event_time_ts").cast("long"))
+    # Parse event_time string to timestamp and keep a seconds-since-epoch column for window ranges.
+    # Sparkov may already provide event_time_unix; synthetic runs will fall back to parsing event_time.
+    df = df.withColumn("event_time_ts", F.to_timestamp("event_time"))
+    if "event_time_unix" in df.columns:
+        df = df.withColumn(
+            "event_time_unix",
+            F.coalesce(F.col("event_time_unix"), F.col("event_time_ts").cast("long")),
+        )
+    else:
+        df = df.withColumn("event_time_unix", F.col("event_time_ts").cast("long"))
 
     # When ref_transaction_id is set (synthetic impossible_travel), we'll compute distance/speed
     # from that ref row instead of from lag(previous row), so pairing is correct at any scale.
@@ -201,11 +207,16 @@ def run(
         "card_id",
         "event_time",
         "event_time_ts",
+        "event_time_unix",
         "amount",
         "merchant_category",
+        "merchant",
         "latitude",
         "longitude",
+        "customer_latitude",
+        "customer_longitude",
         "anomaly_type",
+        "is_fraud",
         "ref_transaction_id",
         "ingestion_timestamp",
         "source_path",
