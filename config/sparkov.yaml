@@ -1,0 +1,22 @@
+# Sparkov benchmark ingestion config
+
+sparkov:
+  # Public dataset file used by the download helper.
+  download_url: "https://huggingface.co/datasets/anhnd210020/creditcard-fraud-dataset/resolve/main/data.csv?download=true"
+
+  # Local destination for the downloaded source file.
+  download_path: "data/benchmark/sparkov/data.csv"
+
+  # Source CSV path(s). Override locally as needed.
+  input_path: "data/benchmark/sparkov/data.csv"
+
+  # Output directory for canonicalized JSONL files that match the FraudLens raw schema.
+  normalized_raw_path: "data/raw_sparkov"
+
+  bronze_path: "data/benchmark/bronze_sparkov"
+  silver_path: "data/benchmark/silver_sparkov"
+  gold_path: "data/benchmark/gold_sparkov"
+
+  # Label mapping strategy for benchmark runs.
+  fraud_label_value: "fraud"
+  non_fraud_label_value: "none"

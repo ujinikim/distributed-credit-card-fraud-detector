@@ -6,13 +6,13 @@ This document defines what each medallion layer means in FraudLens so the pipeli
 
 Purpose: preserve raw transaction data with minimal transformation.
 
-- Input: raw JSON Lines files from the synthetic generator in `data/raw`
+- Input: raw JSON Lines files from the synthetic generator or normalized benchmark data such as Sparkov in `data/raw`
 - Output: Parquet files in `data/bronze`
 - Current implementation: [`src/fraud_lens/ingest/bronze.py`]
 
 Expected schema:
 
-- Raw transaction fields from the generator:
+- Raw transaction fields from the canonical transaction schema:
   - `transaction_id`
   - `card_id`
   - `event_time`
@@ -21,6 +21,7 @@ Expected schema:
   - `latitude`
   - `longitude`
   - `anomaly_type`
+  - `ref_transaction_id` (nullable; synthetic-only for now)
 - Ingestion metadata added in Bronze:
   - `ingestion_timestamp`
   - `source_path`
@@ -61,6 +62,7 @@ Expected schema:
 - `latitude` as double
 - `longitude` as double
 - `anomaly_type` as string
+- `ref_transaction_id` as nullable string
 - `ingestion_timestamp` as timestamp
 - `source_path` as string
 
@@ -92,6 +94,8 @@ Purpose: create ML-ready fraud features from clean Silver transactions.
 - Input: Silver Parquet from `data/silver`
 - Output: feature tables in `data/gold`
 - Current implementation: [`src/fraud_lens/silver_to_gold/transform.py`]
+
+Gold should work against the canonical transaction schema regardless of whether the source data came from the synthetic generator or a benchmark dataset such as Sparkov.
 
 Implemented feature areas (per transaction, per card):
 
@@ -126,6 +130,7 @@ Quality checks:
 - Features are reproducible from Silver inputs
 - Output keeps transaction-level join keys
 - Feature columns are documented and interpretable
+- Source-specific nullable fields such as `ref_transaction_id` do not break feature generation
 
 ## Layer Boundaries
 

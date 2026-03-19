@@ -38,6 +38,7 @@ This doc defines what each "agent" (or workstream) is responsible for. Use it wh
 - **Constraints:**
   - DataFrame API only; avoid unnecessary shuffles.
   - Bronze = "raw" copy: schema-on-read, minimal transformation (e.g. add ingestion timestamp, source path).
+- **Near-term direction:** Support both synthetic input and a benchmark ingestion path for Sparkov while keeping one canonical transaction schema for downstream layers.
 - **Inputs:** Raw JSON path(s) or stream; config for paths and format.
 - **Outputs:** Bronze tables/files (e.g. Parquet) with consistent schema and metadata.
 - **Key files:** `src/fraud_lens/ingest/`, `config/` paths.
@@ -65,6 +66,7 @@ This doc defines what each "agent" (or workstream) is responsible for. Use it wh
   - DataFrame API only; use window/aggregations efficiently.
   - Features should support unsupervised anomaly detection (e.g. K-Means later).
 - **Suggested features:** Velocity (tx count in last N hours), amount (raw or binned), time since last transaction, distance (if geo available) for impossible-travel logic.
+- **Near-term direction:** Validate feature behavior on Sparkov first, then use synthetic data for controlled anomaly-specific checks.
 - **Inputs:** Silver table(s).
 - **Outputs:** Gold table(s) with feature columns and any keys needed for joining back to raw/Silver.
 - **Key files:** `src/fraud_lens/silver_to_gold/`, feature list in this doc or `config/`.
@@ -101,3 +103,4 @@ This doc defines what each "agent" (or workstream) is responsible for. Use it wh
 - **Code style:** PEP 8; Black or Ruff; type hints on public APIs; short docstrings.
 - **Project name:** FraudLens. Package name: `fraud_lens`.
 - **v1 focus:** Dataset (synthetic), Spark environment, and data processing (Bronze → Silver → Gold). ML and LLM are later phases.
+- **Current data strategy:** Sparkov becomes the primary benchmark dataset; synthetic data remains a controlled secondary fixture.

@@ -40,12 +40,14 @@ env/
 # Data (keep structure, ignore contents)
 data/raw/*
 !data/raw/.gitkeep
+data/raw_sparkov/*
 data/bronze/*
 !data/bronze/.gitkeep
 data/silver/*
 !data/silver/.gitkeep
 data/gold/*
 !data/gold/.gitkeep
+data/benchmark/*
 
 # Jupyter
 .ipynb_checkpoints/

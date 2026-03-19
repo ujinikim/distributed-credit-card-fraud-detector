@@ -29,7 +29,10 @@ def _haversine_col(lat1: Column, lon1: Column, lat2: Column, lon2: Column) -> Co
         F.pow(F.sin(dlat / 2), 2)
         + F.cos(F.radians(lat1)) * F.cos(F.radians(lat2)) * F.pow(F.sin(dlon / 2), 2)
     )
-    return 2 * F.lit(6371.0) * F.asin(F.sqrt(F.least(F.lit(1.0), a)))
+    return F.when(
+        lat1.isNull() | lon1.isNull() | lat2.isNull() | lon2.isNull(),
+        F.lit(None).cast(T.DoubleType()),
+    ).otherwise(2 * F.lit(6371.0) * F.asin(F.sqrt(F.least(F.lit(1.0), a))))
 
 
 def run(
@@ -58,6 +61,7 @@ def run(
 
     silver_path = str(Path(silver_path).resolve())
     gold_path = str(Path(gold_path).resolve())
+    target_write_partitions = max(spark.sparkContext.defaultParallelism, 32)
 
     df = spark.read.parquet(silver_path)
 
@@ -208,5 +212,10 @@ def run(
         *feature_cols,
     )
 
-    df_gold.write.mode("overwrite").parquet(gold_path)
+    (
+        df_gold.repartition(target_write_partitions)
+        .write.mode("overwrite")
+        .option("parquet.enable.dictionary", "false")
+        .parquet(gold_path)
+    )
     return df_gold

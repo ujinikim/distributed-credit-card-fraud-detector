@@ -64,10 +64,9 @@ def run(
 
     bronze_path = str(Path(bronze_path).resolve())
     silver_path = str(Path(silver_path).resolve())
+    target_write_partitions = max(spark.sparkContext.defaultParallelism, 32)
 
     df_bronze = spark.read.parquet(bronze_path)
-
-    schema = _required_schema()
 
     # Cast to target types; keep ingestion metadata and ref_transaction_id if present.
     ref_col = (
@@ -126,9 +125,14 @@ def run(
     ]
     df_clean = df_clean.dropDuplicates(dedup_cols)
 
-    # Apply the target schema explicitly when writing (for downstream expectations).
-    df_silver = spark.createDataFrame(df_clean.rdd, schema=schema)
+    # Keep the canonical column order without forcing a Python-side RDD conversion.
+    schema_cols = [field.name for field in _required_schema().fields]
+    df_silver = df_clean.select(*schema_cols)
 
-    df_silver.write.mode("overwrite").parquet(silver_path)
+    (
+        df_silver.repartition(target_write_partitions)
+        .write.mode("overwrite")
+        .option("parquet.enable.dictionary", "false")
+        .parquet(silver_path)
+    )
     return df_silver
-
