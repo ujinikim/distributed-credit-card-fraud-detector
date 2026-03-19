@@ -1,0 +1,10 @@
+# FraudLens paths (adjust for local vs cloud)
+data:
+  raw: "data/raw"
+  bronze: "data/bronze"
+  silver: "data/silver"
+  gold: "data/gold"
+
+# Optional: ingest file pattern under data.raw (e.g. "*.jsonl" or "transactions_*.jsonl")
+ingest:
+  file_pattern: "*.jsonl"
