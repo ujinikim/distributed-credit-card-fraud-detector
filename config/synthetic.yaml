@@ -1,0 +1,38 @@
+# FraudLens — synthetic transaction generator config
+# See docs/synthetic_data_spec.md
+
+num_transactions: 500000
+start_date: "2013-09-01T00:00:00"
+end_date: "2013-09-30T23:59:59"
+seed: 42
+anomaly_ratio: 0.01
+
+num_cards: 5000
+amount_mean: 75.0
+amount_std: 40.0
+
+# Output directory (often overridden by paths.yaml data.raw)
+output_path: "data/raw"
+
+# Merchant categories and weights (retail 40%, food 25%, travel 15%, other 20%)
+merchant_categories:
+  - { name: "retail", weight: 0.40 }
+  - { name: "food", weight: 0.25 }
+  - { name: "travel", weight: 0.15 }
+  - { name: "other", weight: 0.20 }
+
+# Per-card home region: center (lat, lon) and spread (degrees, ~1 deg ≈ 111 km)
+geo_center_lat: 40.0
+geo_center_lon: -74.0
+geo_std: 0.5
+
+# Impossible travel: min minutes between two locations (or max speed km/h)
+min_minutes_between_locations: 120  # 2h for same card at distant points
+# Distance (km) that counts as "far" for impossible travel
+min_distance_km_impossible_travel: 500.0
+
+# Spending spike: multiplier above global mean (e.g. mean + spike_multiplier * std)
+spike_amount_multiplier: 5.0
+
+# Fraction of anomalies that are impossible_travel (rest are spending_spike)
+impossible_travel_fraction: 0.5
