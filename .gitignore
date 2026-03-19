@@ -3,6 +3,9 @@ __pycache__/
 *.py[cod]
 *$py.class
 *.so
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
 .Python
 build/
 develop-eggs/
@@ -24,6 +27,7 @@ wheels/
 venv/
 ENV/
 env/
+.python-version
 
 # IDE
 .idea/
@@ -43,10 +47,14 @@ data/silver/*
 data/gold/*
 !data/gold/.gitkeep
 
+# Jupyter
+.ipynb_checkpoints/
+
 # Spark / runtime
 metastore_db/
 derby.log
 *.log
+spark-warehouse/
 
 # OS
 .DS_Store
