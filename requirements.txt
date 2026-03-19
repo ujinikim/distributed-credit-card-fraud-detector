@@ -1,0 +1,9 @@
+# FraudLens — v1 data processing
+pyspark>=3.4.0,<4
+pyyaml>=6.0
+pandas>=2.0.0
+matplotlib>=3.10.0
+setuptools>=75.0.0
+
+# Code style & quality
+ruff>=0.1.0
