@@ -35,6 +35,21 @@ def _haversine_col(lat1: Column, lon1: Column, lat2: Column, lon2: Column) -> Co
     ).otherwise(2 * F.lit(6371.0) * F.asin(F.sqrt(F.least(F.lit(1.0), a))))
 
 
+def _ensure_optional_columns(df: DataFrame) -> DataFrame:
+    """Add nullable optional columns when reading older shared Silver outputs."""
+    optional_cols: dict[str, Column] = {
+        "merchant": F.lit(None).cast(T.StringType()),
+        "is_fraud": F.lit(None).cast(T.IntegerType()),
+        "customer_latitude": F.lit(None).cast(T.DoubleType()),
+        "customer_longitude": F.lit(None).cast(T.DoubleType()),
+        "event_time_unix": F.lit(None).cast(T.LongType()),
+    }
+    for col_name, default_col in optional_cols.items():
+        if col_name not in df.columns:
+            df = df.withColumn(col_name, default_col)
+    return df
+
+
 def run(
     spark: "SparkSession",
     silver_path: str | Path | None = None,
@@ -45,10 +60,12 @@ def run(
 
     Features (per transaction, per card):
     - event_time_ts: parsed timestamp
-    - time_since_last_tx_minutes
-    - tx_count_last_1h, tx_count_last_24h
-    - amount_zscore (per-card)
+    - time/calendar context
+    - velocity and amount windows
+    - amount_zscore and prior-only amount_zscore (per-card)
     - is_amount_spike (boolean flag)
+    - customer-to-merchant distance
+    - merchant history features when benchmark columns are available
     - distance_from_prev_km, speed_from_prev_kmh
     """
     config = load_paths_config()
@@ -63,7 +80,7 @@ def run(
     gold_path = str(Path(gold_path).resolve())
     target_write_partitions = max(spark.sparkContext.defaultParallelism, 32)
 
-    df = spark.read.parquet(silver_path)
+    df = _ensure_optional_columns(spark.read.parquet(silver_path))
 
     # Parse event_time string to timestamp and keep a seconds-since-epoch column for window ranges.
     # Sparkov may already provide event_time_unix; synthetic runs will fall back to parsing event_time.
@@ -94,9 +111,30 @@ def run(
         F.col("event_time_unix"),
         F.col("transaction_id"),
     )
+    w_by_card_time_prior_rows = w_by_card_time.rowsBetween(
+        Window.unboundedPreceding, -1
+    )
     w_by_card_time_range_1h = w_by_card_time_range.rangeBetween(-3600, 0)
+    w_by_card_time_range_5m = w_by_card_time_range.rangeBetween(-5 * 60, 0)
+    w_by_card_time_range_15m = w_by_card_time_range.rangeBetween(-15 * 60, 0)
     w_by_card_time_range_24h = w_by_card_time_range.rangeBetween(-24 * 3600, 0)
     w_by_card_all = Window.partitionBy("card_id")
+    w_by_merchant_time_range = Window.partitionBy("merchant").orderBy("event_time_unix")
+    w_by_merchant_time = Window.partitionBy("merchant").orderBy(
+        F.col("event_time_unix"),
+        F.col("transaction_id"),
+    )
+    w_by_merchant_time_prior_rows = w_by_merchant_time.rowsBetween(
+        Window.unboundedPreceding, -1
+    )
+    w_by_merchant_time_range_24h = w_by_merchant_time_range.rangeBetween(-24 * 3600, 0)
+    w_by_card_merchant_time = Window.partitionBy("card_id", "merchant").orderBy(
+        F.col("event_time_unix"),
+        F.col("transaction_id"),
+    )
+    w_by_card_merchant_time_prior_rows = w_by_card_merchant_time.rowsBetween(
+        Window.unboundedPreceding, -1
+    )
 
     # Time since last transaction in minutes via lag on the unix timestamp.
     prev_time_unix = F.lag("event_time_unix").over(w_by_card_time)
@@ -110,13 +148,37 @@ def run(
         ),
     )
 
+    # Calendar context from the canonical transaction time.
+    df = (
+        df.withColumn("hour_of_day", F.hour("event_time_ts"))
+        .withColumn("day_of_week", F.dayofweek("event_time_ts"))
+        .withColumn(
+            "is_weekend",
+            F.col("day_of_week").isin(1, 7),
+        )
+        .withColumn(
+            "is_night_transaction",
+            (F.col("hour_of_day") < 6) | (F.col("hour_of_day") >= 22),
+        )
+    )
+
     # Velocity: transaction counts in recent windows.
-    df = df.withColumn(
-        "tx_count_last_1h",
-        F.count("*").over(w_by_card_time_range_1h),
-    ).withColumn(
-        "tx_count_last_24h",
-        F.count("*").over(w_by_card_time_range_24h),
+    df = (
+        df.withColumn("tx_count_last_5m", F.count("*").over(w_by_card_time_range_5m))
+        .withColumn(
+            "tx_count_last_15m",
+            F.count("*").over(w_by_card_time_range_15m),
+        )
+        .withColumn("tx_count_last_1h", F.count("*").over(w_by_card_time_range_1h))
+        .withColumn(
+            "tx_count_last_24h",
+            F.count("*").over(w_by_card_time_range_24h),
+        )
+        .withColumn("amount_sum_last_1h", F.sum("amount").over(w_by_card_time_range_1h))
+        .withColumn(
+            "amount_sum_last_24h",
+            F.sum("amount").over(w_by_card_time_range_24h),
+        )
     )
 
     # Amount z-score per card and spike flag.
@@ -133,6 +195,52 @@ def run(
     ).withColumn(
         "is_amount_spike",
         F.col("amount_zscore") >= F.lit(3.0),
+    )
+
+    # Prior-only amount history avoids leaking the current transaction into its own baseline.
+    prior_tx_count_card = F.count("amount").over(w_by_card_time_prior_rows)
+    prior_amount_sum_card = F.sum("amount").over(w_by_card_time_prior_rows)
+    prior_amount_sumsq_card = F.sum(F.pow(F.col("amount"), 2.0)).over(
+        w_by_card_time_prior_rows
+    )
+    prior_amount_mean_card = prior_amount_sum_card / prior_tx_count_card
+    prior_amount_variance_card = F.greatest(
+        (prior_amount_sumsq_card / prior_tx_count_card)
+        - F.pow(prior_amount_mean_card, 2.0),
+        F.lit(0.0),
+    )
+    prior_amount_std_card = F.sqrt(prior_amount_variance_card)
+    df = (
+        df.withColumn("prior_tx_count_card", prior_tx_count_card)
+        .withColumn("prior_amount_mean_card", prior_amount_mean_card)
+        .withColumn("prior_amount_std_card", prior_amount_std_card)
+        .withColumn(
+            "prior_amount_zscore",
+            F.when(
+                (F.col("prior_tx_count_card") > 1)
+                & (F.col("prior_amount_std_card") > 0),
+                (F.col("amount") - F.col("prior_amount_mean_card"))
+                / F.col("prior_amount_std_card"),
+            ).otherwise(F.lit(None).cast(T.DoubleType())),
+        )
+        .withColumn(
+            "is_amount_spike_prior",
+            F.when(
+                F.col("prior_amount_zscore").isNull(),
+                F.lit(False),
+            ).otherwise(F.col("prior_amount_zscore") >= F.lit(3.0)),
+        )
+    )
+
+    # Sparkov-aware geography features remain null-safe for synthetic runs.
+    df = df.withColumn(
+        "customer_to_merchant_distance_km",
+        _haversine_col(
+            F.col("customer_latitude"),
+            F.col("customer_longitude"),
+            F.col("latitude"),
+            F.col("longitude"),
+        ),
     )
 
     # Distance and speed relative to previous transaction for impossible travel.
@@ -190,13 +298,70 @@ def run(
         )
         df = df.drop("ref_tx_id", "ref_lat", "ref_lon", "ref_time_unix")
 
+    # Merchant history features are benchmark-aware and should stay null for synthetic rows.
+    prior_tx_count_merchant = F.count("transaction_id").over(w_by_merchant_time_prior_rows)
+    prior_fraud_sum_merchant = F.sum(F.coalesce(F.col("is_fraud"), F.lit(0))).over(
+        w_by_merchant_time_prior_rows
+    )
+    prior_repeat_merchant_count = F.count("transaction_id").over(
+        w_by_card_merchant_time_prior_rows
+    )
+    df = (
+        df.withColumn(
+            "merchant_tx_count_last_24h",
+            F.when(
+                F.col("merchant").isNotNull(),
+                F.count("*").over(w_by_merchant_time_range_24h),
+            ).otherwise(F.lit(None).cast(T.LongType())),
+        )
+        .withColumn(
+            "merchant_prior_tx_count",
+            F.when(
+                F.col("merchant").isNotNull(),
+                prior_tx_count_merchant,
+            ).otherwise(F.lit(None).cast(T.LongType())),
+        )
+        .withColumn(
+            "merchant_prior_fraud_rate",
+            F.when(
+                F.col("merchant").isNotNull() & (prior_tx_count_merchant > 0),
+                prior_fraud_sum_merchant / prior_tx_count_merchant,
+            ).otherwise(F.lit(None).cast(T.DoubleType())),
+        )
+        .withColumn(
+            "card_merchant_repeat_count_prior",
+            F.when(
+                F.col("merchant").isNotNull(),
+                prior_repeat_merchant_count,
+            ).otherwise(F.lit(None).cast(T.LongType())),
+        )
+    )
+
     # Select and order columns: keep join keys + features + labels.
     feature_cols = [
+        "hour_of_day",
+        "day_of_week",
+        "is_weekend",
+        "is_night_transaction",
         "time_since_last_tx_minutes",
+        "tx_count_last_5m",
+        "tx_count_last_15m",
         "tx_count_last_1h",
         "tx_count_last_24h",
+        "amount_sum_last_1h",
+        "amount_sum_last_24h",
         "amount_zscore",
         "is_amount_spike",
+        "prior_tx_count_card",
+        "prior_amount_mean_card",
+        "prior_amount_std_card",
+        "prior_amount_zscore",
+        "is_amount_spike_prior",
+        "customer_to_merchant_distance_km",
+        "merchant_tx_count_last_24h",
+        "merchant_prior_tx_count",
+        "merchant_prior_fraud_rate",
+        "card_merchant_repeat_count_prior",
         "distance_from_prev_km",
         "hours_since_prev",
         "speed_from_prev_kmh",

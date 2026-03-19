@@ -19,12 +19,11 @@ def main() -> None:
     from fraud_lens.ingest import load_sparkov_config, run as run_bronze_ingest
     from fraud_lens.silver_to_gold import run as run_silver_to_gold
 
-    spark = (
-        SparkSession.builder.appName("FraudLens-Sparkov-Pipeline")
-        .config("spark.sql.adaptive.enabled", "true")
-        .getOrCreate()
-    )
     config = load_sparkov_config().get("sparkov", {})
+    spark_builder = SparkSession.builder.appName("FraudLens-Sparkov-Pipeline")
+    for key, value in config.get("spark_runtime", {}).items():
+        spark_builder = spark_builder.config(key, str(value))
+    spark = spark_builder.getOrCreate()
 
     raw_path = project_root / config.get("normalized_raw_path", "data/raw_sparkov")
     bronze_path = project_root / config.get("bronze_path", "data/benchmark/bronze_sparkov")

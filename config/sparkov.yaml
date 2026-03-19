@@ -17,6 +17,17 @@ sparkov:
   silver_path: "data/benchmark/silver_sparkov"
   gold_path: "data/benchmark/gold_sparkov"
 
+  # Local Spark defaults for the larger benchmark path.
+  # These settings reduced Parquet read/write memory pressure enough for the
+  # full Sparkov Bronze -> Silver -> Gold run to complete on a local machine.
+  spark_runtime:
+    spark.sql.adaptive.enabled: "true"
+    spark.driver.memory: "6g"
+    spark.executor.memory: "6g"
+    spark.sql.shuffle.partitions: "32"
+    spark.default.parallelism: "32"
+    spark.sql.parquet.enableVectorizedReader: "false"
+
   # Label mapping strategy for benchmark runs.
   fraud_label_value: "fraud"
   non_fraud_label_value: "none"
