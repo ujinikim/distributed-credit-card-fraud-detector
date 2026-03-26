@@ -25,7 +25,7 @@ def build_model_df(df):
     """Select and normalize model input columns from Gold data."""
     from pyspark.sql import functions as F
 
-    return (
+    base = (
         df.where(F.col("is_fraud").isNotNull())
         .select(
             "transaction_id",
@@ -39,12 +39,26 @@ def build_model_df(df):
             "prior_amount_zscore_card_category_damped",
             "prior_amount_zscore_card_category_shrunk",
             "prior_category_log_prior_n",
+            "low_history_card_category",
             "prior_tx_count_card_category",
             "prior_amount_mean_card_category",
             "prior_amount_std_card_category",
         )
         .na.fill(MODEL_FILL_DEFAULTS)
         .withColumn("label", F.col("is_fraud").cast("double"))
+    )
+
+    prior_amount_zscore_clipped = F.greatest(
+        F.lit(-10.0), F.least(F.col("prior_amount_zscore"), F.lit(10.0))
+    )
+    return (
+        base.withColumn("prior_amount_zscore_clipped", prior_amount_zscore_clipped)
+        .withColumn("amount_sum_last_1h_log1p", F.log1p(F.col("amount_sum_last_1h")))
+        .withColumn(
+            "amount_zscore_x_lowcat",
+            F.col("prior_amount_zscore_clipped")
+            * F.col("low_history_card_category").cast("double"),
+        )
     )
 
 
