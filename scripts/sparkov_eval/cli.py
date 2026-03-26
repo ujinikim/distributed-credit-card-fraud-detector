@@ -46,6 +46,30 @@ def parse_args() -> argparse.Namespace:
         help="Use inverse-frequency class weighting for logistic regression (improves PR/F1 under imbalance).",
     )
     parser.add_argument(
+        "--topk-secondary-signal",
+        choices=[
+            "none",
+            "neg_prior_category_log_prior_n",
+            "prior_amount_zscore",
+            "amount_sum_last_1h",
+        ],
+        default="none",
+        help=(
+            "Optional secondary signal used only for Top-K ordering. "
+            "If epsilon is 0, uses lexicographic ordering (score, secondary, time, id). "
+            "If epsilon > 0, uses blended ordering (score + epsilon * secondary)."
+        ),
+    )
+    parser.add_argument(
+        "--topk-secondary-epsilon",
+        type=float,
+        default=0.0,
+        help=(
+            "Optional score-blending weight for Top-K ordering. "
+            "Use 0 for lexicographic ordering."
+        ),
+    )
+    parser.add_argument(
         "--category-k-grid",
         type=str,
         default="",

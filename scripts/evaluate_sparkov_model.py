@@ -107,6 +107,8 @@ def main() -> None:
                     threshold_candidates=THRESHOLD_CANDIDATES,
                     model_type=mt,
                     logistic_class_weights=args.logistic_class_weights,
+                    topk_secondary_signal=args.topk_secondary_signal,
+                    topk_secondary_epsilon=args.topk_secondary_epsilon,
                 )
                 result["feature_set_name"] = feature_set_name
                 subset_results.append(result)

@@ -52,14 +52,57 @@ def threshold_metrics(df, threshold: float) -> dict[str, float]:
     }
 
 
-def top_k_metrics(df, k: int) -> dict[str, float]:
+def top_k_metrics(
+    df,
+    k: int,
+    *,
+    secondary_signal: str = "none",
+    secondary_epsilon: float = 0.0,
+) -> dict[str, float]:
     """Compute top-K alerting metrics from scored rows."""
     from pyspark.sql import functions as F
 
+    if secondary_epsilon < 0.0:
+        raise ValueError("--topk-secondary-epsilon must be >= 0.")
+    if secondary_signal == "none" and secondary_epsilon > 0.0:
+        raise ValueError(
+            "--topk-secondary-epsilon requires --topk-secondary-signal != 'none'."
+        )
+
+    if secondary_signal == "none":
+        secondary_expr = None
+    elif secondary_signal == "neg_prior_category_log_prior_n":
+        secondary_expr = -F.col("prior_category_log_prior_n")
+    elif secondary_signal == "prior_amount_zscore":
+        secondary_expr = F.col("prior_amount_zscore")
+    elif secondary_signal == "amount_sum_last_1h":
+        secondary_expr = F.col("amount_sum_last_1h")
+    else:
+        raise ValueError(f"Unknown secondary signal: {secondary_signal}")
+
+    if secondary_expr is not None and secondary_epsilon > 0.0:
+        score_order = F.desc(F.col("score") + F.lit(float(secondary_epsilon)) * secondary_expr)
+        order_cols = [
+            score_order,
+            F.desc("event_time_unix"),
+            F.asc("transaction_id"),
+        ]
+    elif secondary_expr is not None:
+        order_cols = [
+            F.desc("score"),
+            F.desc(secondary_expr),
+            F.desc("event_time_unix"),
+            F.asc("transaction_id"),
+        ]
+    else:
+        order_cols = [
+            F.desc("score"),
+            F.desc("event_time_unix"),
+            F.asc("transaction_id"),
+        ]
+
     top_k = df.orderBy(
-        F.desc("score"),
-        F.desc("event_time_unix"),
-        F.asc("transaction_id"),
+        *order_cols
     ).limit(k)
     positives_in_dataset = df.agg(
         F.sum(F.col("label").cast("long")).alias("positives")
@@ -89,6 +132,8 @@ def evaluate_feature_set(
     model_type: str,
     compute_validation_and_auc: bool = True,
     logistic_class_weights: bool = False,
+    topk_secondary_signal: str = "none",
+    topk_secondary_epsilon: float = 0.0,
 ) -> dict[str, float]:
     """Train and score one feature subset."""
     from pyspark.ml.classification import GBTClassifier, LogisticRegression
@@ -106,6 +151,9 @@ def evaluate_feature_set(
         "event_time_unix",
         "label",
         "features",
+        "prior_category_log_prior_n",
+        "prior_amount_zscore",
+        "amount_sum_last_1h",
     )
 
     if model_type == "logistic":
@@ -154,11 +202,19 @@ def evaluate_feature_set(
         "event_time_unix",
         "label",
         vector_to_array("probability")[1].alias("score"),
+        "prior_category_log_prior_n",
+        "prior_amount_zscore",
+        "amount_sum_last_1h",
     )
 
     top_k_rows = []
     for k in TOP_K_VALUES:
-        top_k = top_k_metrics(test_pred, k)
+        top_k = top_k_metrics(
+            test_pred,
+            k,
+            secondary_signal=topk_secondary_signal,
+            secondary_epsilon=topk_secondary_epsilon,
+        )
         top_k_rows.append(
             {
                 "k": k,

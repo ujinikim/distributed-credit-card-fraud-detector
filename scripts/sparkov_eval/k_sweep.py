@@ -95,6 +95,8 @@ def run_category_k_sweep(model_df, args, threshold_candidates):
                     model_type=mt,
                     compute_validation_and_auc=False,
                     logistic_class_weights=args.logistic_class_weights,
+                    topk_secondary_signal=args.topk_secondary_signal,
+                    topk_secondary_epsilon=args.topk_secondary_epsilon,
                 )
                 top_rows = {row["k"]: row["precision"] for row in r["top_k_rows"]}
                 results.append(
