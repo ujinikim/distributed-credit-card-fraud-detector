@@ -306,6 +306,39 @@ Top-K (test):
 
 **Takeaway:** Class weighting significantly hurts both main PR AUC/F1 and queue purity (Top-5000 precision).
 
+### Run 20: V4 (tie-break) — Logistic + GBT on derived amount transforms + interaction
+
+**Feature set:** `amount_plus_night_catz_v4_interact_clip`  
+**Top-K tie-break:** `--topk-secondary-signal neg_prior_category_log_prior_n`
+
+**Features:** `prior_amount_zscore_clipped`, `amount_sum_last_1h_log1p`, `is_night_transaction`, `prior_amount_zscore_card_category_damped`, `prior_amount_zscore_card_category_shrunk`, `prior_category_zscore_eligible`, `prior_category_log_prior_n`, `amount_zscore_x_lowcat`
+
+| Model | PR AUC (Val) | ROC AUC (Val) | PR AUC (Test) | ROC AUC (Test) | Precision (Test) | Recall (Test) | F1 (Test) |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| Logistic | 0.3873 | 0.9167 | 0.2854 | 0.8952 | 0.3395 | 0.5029 | 0.4053 |
+| GBT | 0.6023 | 0.9708 | 0.4684 | 0.9598 | 0.4122 | 0.6890 | 0.5158 |
+
+Top-K (test) — Logistic:
+| k | precision | recall | tp |
+|---|---:|---:|---:|
+| 100 | 0.2500 | 0.0017 | 25 |
+| 500 | 0.4220 | 0.0146 | 211 |
+| 1,000 | 0.3730 | 0.0258 | 373 |
+| 5,000 | 0.4660 | 0.1613 | 2330 |
+| 10,000 | 0.4951 | 0.3428 | 4951 |
+
+Top-K (test) — GBT:
+| k | precision | recall | tp |
+|---|---:|---:|---:|
+| 100 | 0.9900 | 0.0069 | 99 |
+| 500 | 0.9080 | 0.0314 | 454 |
+| 1,000 | 0.8350 | 0.0578 | 835 |
+| 5,000 | 0.6056 | 0.2097 | 3028 |
+| 10,000 | 0.5248 | 0.3634 | 5248 |
+
+**Pass criteria outcome:** Rejected.  
+GBT improves PR AUC/F1 and keeps strong top-100, but does not meet the baseline floor on queue purity (`precision@5000 >= 0.62`). Logistic regresses sharply on `precision@5000`.
+
 ## Conclusions
 
 - **Baseline features:** `prior_amount_zscore`, `amount_sum_last_1h`, `is_night_transaction`
