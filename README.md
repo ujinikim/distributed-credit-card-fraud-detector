@@ -23,7 +23,10 @@ ML and the LLM Auto-Investigator come later.
 - `src/fraud_lens/` — Ingest, Bronze→Silver, Silver→Gold, synthetic generator
 - `scripts/` — Pipeline runners
 - `docs/AGENTS.md` — Short contributor orientation
+- `docs/PROJECT_GUIDE.md` — Quick project navigation and command map
 - `docs/medallion_layers.md` — Layer responsibilities and the current Silver contract
+- `docs/model_eval_latest.md` — Current model recommendation and key metrics
+- `docs/sparkov_model_eval.md` — Full experiment history archive
 - `docs/sparkov_benchmark_plan.md` — Sparkov dataset role and source-to-canonical mapping
 - `docs/sparkov_feature_roadmap.md` — Next Sparkov-aware Gold feature families
 
@@ -49,7 +52,9 @@ The project contract and recommended reading order are:
 1. [docs/medallion_layers.md](docs/medallion_layers.md)
 2. [docs/sparkov_benchmark_plan.md](docs/sparkov_benchmark_plan.md)
 3. [docs/sparkov_feature_findings.md](docs/sparkov_feature_findings.md)
-4. [docs/sparkov_feature_roadmap.md](docs/sparkov_feature_roadmap.md)
+4. [docs/model_eval_latest.md](docs/model_eval_latest.md)
+5. [docs/sparkov_model_eval.md](docs/sparkov_model_eval.md)
+6. [docs/sparkov_feature_roadmap.md](docs/sparkov_feature_roadmap.md)
 
 ## Benchmark Workflow
 
