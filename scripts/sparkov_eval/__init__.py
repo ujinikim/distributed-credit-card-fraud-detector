@@ -1,2 +1,2 @@
-"""Reusable helpers for Sparkov model evaluation scripts."""
+"""Sparkov evaluation modules (two-stage reranker, metrics, and data prep)."""
 
