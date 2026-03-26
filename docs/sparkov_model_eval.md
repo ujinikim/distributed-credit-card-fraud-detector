@@ -339,6 +339,77 @@ Top-K (test) — GBT:
 **Pass criteria outcome:** Rejected.  
 GBT improves PR AUC/F1 and keeps strong top-100, but does not meet the baseline floor on queue purity (`precision@5000 >= 0.62`). Logistic regresses sharply on `precision@5000`.
 
+### Run 21: Two-stage reranker — Base Run 9 LR + Reranker Run 18 GBT (shortlist N=5000)
+
+**Goal:** Improve the very top of the alert queue without harming queue purity at `k=5000`.
+
+**Base (stage-1) model:** Run 9 logistic (`feature-set = amount_plus_night`)  
+**Reranker (stage-2) model:** Run 18 GBT (`feature-set = amount_plus_night_catz_v3_shrunk`)  
+**Shortlist:** top-5000 from base LR  
+**Remainder:** appended in original base LR order (so Top-10k remains computable)
+
+Important: because we rerank *within* the base LR top-5000, the set of rows in the first 5000 positions is unchanged, so `precision@5000` is preserved by construction.
+
+Top-K (test) — baseline vs reranked:
+
+| Setup | k | precision | recall | tp |
+|---|---:|---:|---:|---:|
+| Baseline (Run 9 LR) | 100 | 0.0000 | 0.0000 | 0 |
+| Baseline (Run 9 LR) | 500 | 0.3100 | 0.0107 | 155 |
+| Baseline (Run 9 LR) | 1,000 | 0.4900 | 0.0339 | 490 |
+| Baseline (Run 9 LR) | 5,000 | 0.6200 | 0.2147 | 3100 |
+| Baseline (Run 9 LR) | 10,000 | 0.5226 | 0.3619 | 5226 |
+| Rerank (pure) | 100 | 1.0000 | 0.0069 | 100 |
+| Rerank (pure) | 500 | 0.9560 | 0.0331 | 478 |
+| Rerank (pure) | 1,000 | 0.8600 | 0.0596 | 860 |
+| Rerank (pure) | 5,000 | 0.6200 | 0.2147 | 3100 |
+| Rerank (pure) | 10,000 | 0.5226 | 0.3619 | 5226 |
+| Rerank (blended, alpha=0.05) | 100 | 0.9400 | 0.0065 | 94 |
+| Rerank (blended, alpha=0.05) | 500 | 0.9300 | 0.0322 | 465 |
+| Rerank (blended, alpha=0.05) | 1,000 | 0.8600 | 0.0596 | 860 |
+| Rerank (blended, alpha=0.05) | 5,000 | 0.6200 | 0.2147 | 3100 |
+| Rerank (blended, alpha=0.05) | 10,000 | 0.5226 | 0.3619 | 5226 |
+| Rerank (blended, alpha=0.10) | 100 | 0.8900 | 0.0062 | 89 |
+| Rerank (blended, alpha=0.10) | 500 | 0.9240 | 0.0320 | 462 |
+| Rerank (blended, alpha=0.10) | 1,000 | 0.8610 | 0.0596 | 861 |
+| Rerank (blended, alpha=0.10) | 5,000 | 0.6200 | 0.2147 | 3100 |
+| Rerank (blended, alpha=0.10) | 10,000 | 0.5226 | 0.3619 | 5226 |
+
+**Takeaway:** Two-stage reranking fixes the “top-100 is empty” failure mode for the Run 9 LR queue while keeping `precision@5000` and `precision@10000` unchanged. Pure rerank performed best at top-100 in this sweep.
+
+### Run 22: Two-stage reranker — Base Run 17 LR + Reranker Run 18 GBT (shortlist N=5000)
+
+**Base (stage-1) model:** Run 17 logistic (`feature-set = amount_plus_night_catz_v3_damped_shrunk`)  
+**Reranker (stage-2) model:** Run 18 GBT (`feature-set = amount_plus_night_catz_v3_shrunk`)  
+**Shortlist:** top-5000 from base LR
+
+Top-K (test) — baseline vs reranked:
+
+| Setup | k | precision | recall | tp |
+|---|---:|---:|---:|---:|
+| Baseline (Run 17 LR) | 100 | 0.0100 | 0.0001 | 1 |
+| Baseline (Run 17 LR) | 500 | 0.3880 | 0.0134 | 194 |
+| Baseline (Run 17 LR) | 1,000 | 0.5530 | 0.0383 | 553 |
+| Baseline (Run 17 LR) | 5,000 | 0.6450 | 0.2233 | 3225 |
+| Baseline (Run 17 LR) | 10,000 | 0.5344 | 0.3701 | 5344 |
+| Rerank (pure) | 100 | 1.0000 | 0.0069 | 100 |
+| Rerank (pure) | 500 | 0.9280 | 0.0321 | 464 |
+| Rerank (pure) | 1,000 | 0.8980 | 0.0622 | 898 |
+| Rerank (pure) | 5,000 | 0.6450 | 0.2233 | 3225 |
+| Rerank (pure) | 10,000 | 0.5344 | 0.3701 | 5344 |
+| Rerank (blended, alpha=0.05) | 100 | 1.0000 | 0.0069 | 100 |
+| Rerank (blended, alpha=0.05) | 500 | 0.9440 | 0.0327 | 472 |
+| Rerank (blended, alpha=0.05) | 1,000 | 0.8990 | 0.0623 | 899 |
+| Rerank (blended, alpha=0.05) | 5,000 | 0.6450 | 0.2233 | 3225 |
+| Rerank (blended, alpha=0.05) | 10,000 | 0.5344 | 0.3701 | 5344 |
+| Rerank (blended, alpha=0.10) | 100 | 1.0000 | 0.0069 | 100 |
+| Rerank (blended, alpha=0.10) | 500 | 0.9440 | 0.0327 | 472 |
+| Rerank (blended, alpha=0.10) | 1,000 | 0.8950 | 0.0620 | 895 |
+| Rerank (blended, alpha=0.10) | 5,000 | 0.6450 | 0.2233 | 3225 |
+| Rerank (blended, alpha=0.10) | 10,000 | 0.5344 | 0.3701 | 5344 |
+
+**Takeaway:** Same story as Run 21: reranking massively improves top-of-queue precision while preserving `precision@5000` and `precision@10000` (shortlist-only reorder). Base Run 17 remains the “best LR queue purity” option, and reranking improves the first-page experience.
+
 ## Conclusions
 
 - **Baseline features:** `prior_amount_zscore`, `amount_sum_last_1h`, `is_night_transaction`
