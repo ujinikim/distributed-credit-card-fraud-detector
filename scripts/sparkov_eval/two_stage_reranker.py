@@ -14,12 +14,21 @@ class TopKResult:
     rows: int
 
 
-def _compute_topk_from_finalpos(df, *, k_values: list[int], pos_col: str) -> list[TopKResult]:
-    """Compute precision/recall@k from an already-ordered final queue."""
+def _compute_topk_from_finalpos(
+    df,
+    *,
+    k_values: list[int],
+    pos_col: str,
+    positives_total: int,
+) -> list[TopKResult]:
+    """Compute precision/recall@k from an already-ordered final queue.
+
+    Note: recall denominator must be computed against the positives in the *full* dataset,
+    not just within the final_queue subset used for ordering.
+    """
     from pyspark.sql import functions as F
 
-    positives_row = df.agg(F.sum(F.col("label").cast("long")).alias("positives")).first()
-    positives = int(positives_row["positives"] or 0)
+    positives = int(positives_total)
 
     # One pass conditional aggregation for all k's.
     agg_exprs = []
@@ -158,26 +167,49 @@ def two_stage_rerank_topk(
 
     scored = lr_scored.join(gbt_scored, on="transaction_id", how="inner")
 
-    # --- Baseline queue order: full LR ranking ---
-    window_lr = Window.orderBy(
+    max_k = int(max(topk_values)) if topk_values else 0
+    if max_k <= 0:
+        raise ValueError("topk_values must contain positive integers")
+    shortlist_n = min(shortlist_n, max_k)
+
+    # Total positives for correct recall computation (across the full test set).
+    positives_row = scored.agg(F.sum(F.col("label").cast("long")).alias("positives")).first()
+    positives_total = int(positives_row["positives"] or 0)
+
+    # Baseline order used for shortlist selection and baseline metrics:
+    baseline_ordered = scored.orderBy(
         F.desc("lr_score"),
         F.desc("event_time_unix"),
         F.asc("transaction_id"),
     )
-    scored = scored.withColumn("lr_rank", F.row_number().over(window_lr))
-    baseline_queue = scored.select(
-        "label", F.col("lr_rank").alias("final_pos_in_queue")
+
+    # Only position/compute ranks for the top-max_k portion.
+    baseline_top = baseline_ordered.limit(max_k)
+
+    window_baseline_top = Window.orderBy(
+        F.desc("lr_score"),
+        F.desc("event_time_unix"),
+        F.asc("transaction_id"),
+    )
+    baseline_top = baseline_top.withColumn(
+        "baseline_pos_in_queue", F.row_number().over(window_baseline_top)
     )
 
+    baseline_queue = baseline_top.select(
+        "label", F.col("baseline_pos_in_queue").alias("final_pos_in_queue")
+    )
     baseline_metrics = _compute_topk_from_finalpos(
-        baseline_queue, k_values=topk_values, pos_col="final_pos_in_queue"
+        baseline_queue,
+        k_values=topk_values,
+        pos_col="final_pos_in_queue",
+        positives_total=positives_total,
     )
 
-    # --- Reranked queue order: top-N shortlist rerank ---
-    # Shortlist is selected from LR ranks, so N is anchored to the baseline queue.
-    shortlist_df = scored.where(F.col("lr_rank") <= F.lit(shortlist_n))
-    remainder_df = scored.where(F.col("lr_rank") > F.lit(shortlist_n))
+    # Shortlist = first N items under baseline order.
+    shortlist_df = baseline_top.where(F.col("baseline_pos_in_queue") <= F.lit(shortlist_n))
+    remainder_next_df = baseline_top.where(F.col("baseline_pos_in_queue") > F.lit(shortlist_n))
 
+    # Rerank only the shortlist.
     if rerank_mode == "pure":
         window_shortlist = Window.orderBy(
             F.desc("gbt_score"),
@@ -203,18 +235,19 @@ def two_stage_rerank_topk(
         )
 
     shortlist_final = shortlist_ranked.select(
-        "label",
-        F.col("shortlist_pos").alias("final_pos_in_queue"),
+        "label", F.col("shortlist_pos").alias("final_pos_in_queue")
     )
-    remainder_final = remainder_df.select(
-        "label",
-        F.col("lr_rank").alias("final_pos_in_queue"),
+    remainder_final = remainder_next_df.select(
+        "label", F.col("baseline_pos_in_queue").alias("final_pos_in_queue")
     )
 
     final_queue = shortlist_final.unionByName(remainder_final)
 
     reranked_metrics = _compute_topk_from_finalpos(
-        final_queue, k_values=topk_values, pos_col="final_pos_in_queue"
+        final_queue,
+        k_values=topk_values,
+        pos_col="final_pos_in_queue",
+        positives_total=positives_total,
     )
 
     def _as_simple(metrics: list[TopKResult]) -> list[dict[str, object]]:
