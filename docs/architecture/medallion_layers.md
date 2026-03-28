@@ -85,15 +85,16 @@ Silver is the handoff point between cleaning and feature extraction. The schema 
 
 ## Why These Silver Columns Are Enough
 
-The current Silver contract supports the next Gold feature batch:
+The Silver contract includes the fields needed for the **current** Gold baseline:
 
 - prior-only customer amount z-score
+- prior-only **(card × `merchant_category`)** amount count / mean / std / gated z-score (see Gold transform)
 - customer-to-merchant distance
 - time-of-day and weekend features
 - richer velocity windows
 - merchant frequency and merchant fraud-rate windows
 
-That means we do not need to add profile-heavy fields such as `city`, `job`, or `dob` yet.
+This benchmark path does not rely on profile-heavy fields such as `city`, `job`, or `dob`.
 
 ## Current Gold Baseline
 
@@ -103,6 +104,8 @@ The shared Gold transform currently computes:
 - time since previous transaction
 - transaction counts over recent windows
 - per-card amount z-score and spike flag
+- prior-only per-card amount mean/std/z-score and prior spike flag
+- prior-only **(card_id, merchant_category)** amount count, mean, std, **gated** z-score (`prior_amount_zscore_card_category` is null when prior count is below **K** or std is 0), plus **shrunk** mean toward the prior card mean, **damped** z, **z from shrunk mean**, `prior_category_log_prior_n`, `prior_category_zscore_eligible`, and `low_history_card_category` (**K** is `PRIOR_CATEGORY_Z_MIN_TX`; implementation and constants are in [`../../src/fraud_lens/silver_to_gold/transform.py`](../../src/fraud_lens/silver_to_gold/transform.py))
 - previous-location distance, elapsed hours, and speed
 
 Sparkov-specific Gold work should extend this baseline rather than replace it.
@@ -126,7 +129,6 @@ Gold should satisfy:
 ## Related Docs
 
 - [README.md](../README.md)
-- [sparkov_benchmark_plan.md](sparkov_benchmark_plan.md)
-- [sparkov_feature_findings.md](sparkov_feature_findings.md)
-- [sparkov_feature_roadmap.md](sparkov_feature_roadmap.md)
-- [synthetic_data_spec.md](synthetic_data_spec.md)
+- [../sparkov/sparkov_benchmark_plan.md](../sparkov/sparkov_benchmark_plan.md)
+- [../archive/sparkov_feature_findings.md](../archive/sparkov_feature_findings.md)
+- [../reference/synthetic_data_spec.md](../reference/synthetic_data_spec.md)

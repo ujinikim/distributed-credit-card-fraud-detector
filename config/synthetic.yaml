@@ -1,5 +1,5 @@
 # FraudLens — synthetic transaction generator config
-# See docs/synthetic_data_spec.md
+# See docs/reference/synthetic_data_spec.md
 
 num_transactions: 500000
 start_date: "2013-09-01T00:00:00"

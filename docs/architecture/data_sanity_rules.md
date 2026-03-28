@@ -7,7 +7,7 @@ These rules are implemented and explored in `notebooks/explore_silver_gold.ipynb
 ## 1. Global expectations
 
 - **Schema alignment**
-  - Bronze and Silver follow the schema in `docs/synthetic_data_spec.md` and `docs/medallion_layers.md`.
+  - Bronze and Silver follow the schema in [`reference/synthetic_data_spec.md`](../reference/synthetic_data_spec.md) and [`medallion_layers.md`](medallion_layers.md).
   - Gold keeps all join keys (`transaction_id`, `card_id`, `event_time`, `anomaly_type`, `ingestion_timestamp`, `source_path`) and adds feature columns from `src/fraud_lens/silver_to_gold/transform.py`.
 - **Anomaly prevalence**
   - The fraction of rows where `anomaly_type != "none"` in Silver/Gold should roughly match the configured `anomaly_ratio` in `config/synthetic.yaml` (subject to filtering/deduplication in Silver).

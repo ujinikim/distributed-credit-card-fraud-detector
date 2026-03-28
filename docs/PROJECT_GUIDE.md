@@ -1,31 +1,16 @@
-# Project Guide
+# Project guide
 
-Quick navigation for the FraudLens Sparkov workflow.
+Quick navigation and commands for the FraudLens Sparkov workflow. **Docs index:** [README.md](README.md).
 
-## Start Here
+## Where things live
 
-1. Read `README.md` for setup and pipeline entrypoints.
-2. Read `docs/medallion_layers.md` for Bronze/Silver/Gold responsibilities.
-3. Read `docs/model_eval_latest.md` for the current modeling decision.
+- `src/fraud_lens/silver_to_gold/transform.py` — Gold feature engineering (card × category, low-history handling)
+- `scripts/evaluate_sparkov_model.py` — Model training/evaluation CLI and Top-K metrics
+- `scripts/inspect_sparkov_alerts.py` — Error analysis for top-ranked alerts
+- `docs/archive/sparkov_model_eval.md` — Full run-by-run experiment archive
+- `docs/sparkov/model_eval_latest.md` — Current recommendation and key run comparison
 
-## Where Things Live
-
-- `src/fraud_lens/silver_to_gold/transform.py`  
-  Gold feature engineering, including card x category features and low-history handling.
-
-- `scripts/evaluate_sparkov_model.py`  
-  Model training/evaluation CLI, feature-set wiring, and Top-K metrics.
-
-- `scripts/inspect_sparkov_alerts.py`  
-  Error analysis for top-ranked alerts.
-
-- `docs/sparkov_model_eval.md`  
-  Full run-by-run experiment archive.
-
-- `docs/model_eval_latest.md`  
-  Current recommendation and key run comparison.
-
-## Common Tasks
+## Common tasks
 
 - Rebuild Sparkov medallion layers:
   - `python scripts/run_sparkov_pipeline.py`
@@ -36,17 +21,16 @@ Quick navigation for the FraudLens Sparkov workflow.
 - Compare LR vs GBT:
   - `python scripts/evaluate_sparkov_model.py --feature-set amount_plus_night --model-type both`
 
+- Two-stage reranker (best “first page” of alerts):
+  - Base Run 9 LR → rerank top-5000 using Run 18 GBT:
+    - `python scripts/evaluate_two_stage_reranker.py --base-lr-run 9 --reranker-gbt-run 18 --shortlist-n 5000 --rerank-mode pure --topk 100,500,1000,5000,10000`
+  - Base Run 17 LR → same:
+    - `python scripts/evaluate_two_stage_reranker.py --base-lr-run 17 --reranker-gbt-run 18 --shortlist-n 5000 --rerank-mode pure --topk 100,500,1000,5000,10000`
+
 - Inspect top alerts:
   - `python scripts/inspect_sparkov_alerts.py --feature-set amount_plus_night --model-type logistic`
 
 ## Terminology
 
-- **Gating K:** minimum prior count needed before category z-score is considered eligible.
+- **Gating K:** minimum prior count before category z-score is eligible.
 - **Top-K:** evaluation budget (`precision@100`, `precision@5000`, `precision@10000`), unrelated to gating K.
-
-## Doc Reading Order (Modeling)
-
-1. `docs/sparkov_feature_findings.md` (what worked)
-2. `docs/model_eval_latest.md` (what to use now)
-3. `docs/sparkov_model_eval.md` (full run history)
-4. `docs/sparkov_feature_roadmap.md` (what to try next)

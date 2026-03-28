@@ -1,34 +1,10 @@
 # FraudLens
 
-Distributed credit card fraud detection: PySpark, medallion architecture (Bronze → Silver → Gold), and ML-oriented transaction feature engineering.
+Distributed credit card fraud detection: PySpark, medallion architecture (Bronze → Silver → Gold), and ML-oriented transaction feature engineering. The default path uses **Sparkov** benchmark data at multi-million-row scale; **synthetic** data remains a small fixture for smoke tests and regression checks. Feature extraction lives in **Gold** after Bronze ingestion and Silver cleaning.
 
-Current focus:
+## Documentation
 
-- Sparkov benchmark analysis as the default dataset path
-- Synthetic dataset support as a smaller controlled test fixture
-- Spark environment and data processing pipeline
-
-ML and the LLM Auto-Investigator come later.
-
-## Current Direction
-
-- Sparkov benchmark analysis is the default dataset path.
-- Synthetic data remains a smaller controlled fixture for regression tests, smoke tests, and explicit anomaly validation.
-- Feature extraction belongs primarily in the Gold layer, after Bronze ingestion and Silver cleaning.
-
-## Repo layout
-
-- `config/` — Paths and pipeline config
-- `data/` — Bronze, Silver, Gold layers
-- `src/fraud_lens/` — Ingest, Bronze→Silver, Silver→Gold, synthetic generator
-- `scripts/` — Pipeline runners
-- `docs/AGENTS.md` — Short contributor orientation
-- `docs/PROJECT_GUIDE.md` — Quick project navigation and command map
-- `docs/medallion_layers.md` — Layer responsibilities and the current Silver contract
-- `docs/model_eval_latest.md` — Current model recommendation and key metrics
-- `docs/sparkov_model_eval.md` — Full experiment history archive
-- `docs/sparkov_benchmark_plan.md` — Sparkov dataset role and source-to-canonical mapping
-- `docs/sparkov_feature_roadmap.md` — Next Sparkov-aware Gold feature families
+**Start here:** [docs/README.md](docs/README.md) — reading order and map of all docs.
 
 ## Setup
 
@@ -38,54 +14,39 @@ source .venv/bin/activate   # or .venv\Scripts\activate on Windows
 pip install -r requirements.txt
 ```
 
-Run (when implemented): `python scripts/run_pipeline.py`
+Default benchmark pipeline: `python scripts/run_sparkov_pipeline.py` (paths in [config/sparkov.yaml](config/sparkov.yaml)).
 
-## Data Strategy
+## Repo layout
 
-FraudLens now uses two complementary data paths:
+| Path | Role |
+| --- | --- |
+| `config/` | Paths and pipeline config |
+| `data/` | Bronze, Silver, Gold layer outputs |
+| `src/fraud_lens/` | Ingest, Bronze→Silver, Silver→Gold, synthetic generator |
+| `scripts/` | Pipeline runners and evaluation CLIs |
+| `docs/` | `architecture/`, `sparkov/`, `reference/`, `archive/` — map: [docs/README.md](docs/README.md) |
 
-- **Sparkov benchmark data** as the default dataset for feature design, scaling checks, and exploratory analysis
-- **Synthetic data** as a smaller controlled fixture for pipeline validation, regression tests, and explicitly constructed anomaly cases
+## Data strategy
 
-The project contract and recommended reading order are:
+- **Sparkov:** default dataset for feature design, scaling checks, and model evaluation.
+- **Synthetic:** controlled fixture for pipeline validation and explicit anomaly cases ([docs/reference/synthetic_data_spec.md](docs/reference/synthetic_data_spec.md)).
 
-1. [docs/medallion_layers.md](docs/medallion_layers.md)
-2. [docs/sparkov_benchmark_plan.md](docs/sparkov_benchmark_plan.md)
-3. [docs/sparkov_feature_findings.md](docs/sparkov_feature_findings.md)
-4. [docs/model_eval_latest.md](docs/model_eval_latest.md)
-5. [docs/sparkov_model_eval.md](docs/sparkov_model_eval.md)
-6. [docs/sparkov_feature_roadmap.md](docs/sparkov_feature_roadmap.md)
-
-## Benchmark Workflow
-
-Download the Sparkov source CSV with:
+## Benchmark workflow (Sparkov)
 
 ```bash
 python scripts/download_sparkov_data.py
-```
-
-Then normalize Sparkov CSV files into the canonical raw transaction schema with:
-
-```bash
 python scripts/normalize_sparkov_data.py
-```
-
-Run the benchmark medallion pipeline with:
-
-```bash
 python scripts/run_sparkov_pipeline.py
 ```
 
-By default these scripts read and write the paths configured in [config/sparkov.yaml](config/sparkov.yaml), downloading the source CSV to `data/benchmark/sparkov/data.csv`, writing canonical JSON records to `data/raw_sparkov`, and writing benchmark Bronze/Silver/Gold outputs under `data/benchmark/`.
+Paths and Spark settings: [config/sparkov.yaml](config/sparkov.yaml) (e.g. `data/benchmark/sparkov/data.csv`, `data/benchmark/` for Bronze/Silver/Gold).
 
-## Synthetic Workflow
+Optional two-stage reranker (queue UX, improves top-100 without changing top-5000 membership):
 
-Synthetic data is still useful, but it is no longer the primary analysis path.
+```bash
+python scripts/evaluate_two_stage_reranker.py --base-lr-run 9 --reranker-gbt-run 18 --shortlist-n 5000 --rerank-mode pure --topk 100,500,1000,5000,10000
+```
 
-Use it when you need:
+## Synthetic workflow
 
-- deterministic small-scale regression checks
-- controlled impossible-travel or spending-spike examples
-- fast pipeline smoke tests
-
-The synthetic generator spec lives in [docs/synthetic_data_spec.md](docs/synthetic_data_spec.md).
+Use synthetic data for deterministic regression checks, impossible-travel or spending-spike examples, and fast smoke tests. Spec: [docs/reference/synthetic_data_spec.md](docs/reference/synthetic_data_spec.md).

@@ -2,7 +2,7 @@
 
 This document defines how FraudLens uses Sparkov as the default benchmark dataset.
 
-For layer responsibilities and the authoritative Silver contract, see [medallion_layers.md](medallion_layers.md).
+For layer responsibilities and the authoritative Silver contract, see [../architecture/medallion_layers.md](../architecture/medallion_layers.md).
 
 ## Role in the Project
 
@@ -103,9 +103,9 @@ Observed benchmark state:
 - fraud rows: 94,806
 - non-fraud rows: 8,485,449
 
-## Next Feature-Oriented Requirements
+## Gold features covered by this contract
 
-The current Silver contract is enough to support the next Gold expansion:
+The Sparkov Silver contract supports the Gold baseline that was built for this project, including:
 
 - prior-only customer amount z-score
 - customer-to-merchant distance
@@ -113,4 +113,4 @@ The current Silver contract is enough to support the next Gold expansion:
 - richer velocity windows
 - merchant frequency and merchant fraud-rate windows
 
-Anything beyond that, especially profile or demographic features, should be added intentionally rather than by default.
+Profile or demographic fields were out of scope for this benchmark path.

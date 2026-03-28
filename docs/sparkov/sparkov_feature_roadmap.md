@@ -2,7 +2,7 @@
 
 This document lists the most useful next Gold-layer features for Sparkov.
 
-For the current layer contract and Silver schema, see [medallion_layers.md](medallion_layers.md). For source mapping, see [sparkov_benchmark_plan.md](sparkov_benchmark_plan.md).
+For the current layer contract and Silver schema, see [../architecture/medallion_layers.md](../architecture/medallion_layers.md). For source mapping, see [sparkov_benchmark_plan.md](sparkov_benchmark_plan.md).
 
 The goal is to prioritize feature families that are:
 

@@ -2,7 +2,7 @@
 
 Detailed specification for the synthetic transaction generator. Use this for fixture generation, regression checks, and explicit anomaly validation.
 
-For the main layer contract, see [medallion_layers.md](medallion_layers.md).
+For the main layer contract, see [../architecture/medallion_layers.md](../architecture/medallion_layers.md).
 
 ---
 

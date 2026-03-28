@@ -2,8 +2,8 @@
 
 This file is the full run-by-run experiment archive.
 
-- For the current recommendation and quick comparison, see `docs/model_eval_latest.md`.
-- For project navigation, see `docs/PROJECT_GUIDE.md`.
+- For the current recommendation and quick comparison, see [`../sparkov/model_eval_latest.md`](../sparkov/model_eval_latest.md).
+- For project navigation, see [`../PROJECT_GUIDE.md`](../PROJECT_GUIDE.md).
 
 Each entry below records what changed, the metrics, and what we learned.
 
@@ -53,7 +53,7 @@ Confusion: tp=4628 fp=7961 tn=1,268,419 fn=9815
 
 Top-K: top-1000 `0.533`, top-5000 `0.5232`, top-10000 `0.415`.
 
-**Takeaway:** Model works better as a ranked alerting queue than a binary classifier. Next question: is low precision from thresholds or from noisy features?
+**Takeaway:** Model works better as a ranked alerting queue than a binary classifier. The remaining question at the time was whether low precision came from thresholds or from noisy features.
 
 ### Run 3: Sampled feature subset comparison
 
@@ -112,7 +112,7 @@ Inspected top-100 and top-5000 test alerts from both models.
 
 **GBT top-100:** 77 TP / 23 FP. FP still travel-dominated but far less extreme (avg amount ~373, avg zscore ~1.75). By top-5000: only 1,320 TP at 0.2640 precision.
 
-**Takeaway:** Logistic over-ranks ultra-extreme legitimate spend bursts. GBT finds a fraud-rich pocket at the top but spreads too thin. Next useful step: find a feature that helps logistic stop over-ranking giant legitimate spends.
+**Takeaway:** Logistic over-ranks ultra-extreme legitimate spend bursts. GBT finds a fraud-rich pocket at the top but spreads too thin. A later line of work was to reduce over-ranking of giant legitimate spends (see later runs and category features in this archive).
 
 ### Run 8: Third feature — `tx_count_last_1h`
 
@@ -419,13 +419,7 @@ Top-K (test) — baseline vs reranked:
 - Velocity: not yet earning its keep in logistic
 - Merchant fraud rate: keep in Gold, not in baseline
 - Logistic: best general baseline; GBT: sharper at very small queues
-- Future experiments compare against the amount + night baseline, not the older five-feature set
-
-## Recommended Next Step
-
-1. Inspect top-5k false positives for Run 17 by `merchant_category` to see what remains (and why Top-100 precision stays near-zero)
-2. Add a tie-break / reranking strategy so the very top of the queue is not all score-tied
-3. Keep the V3 unweighted setup; avoid inverse-frequency class weights (they tank queue purity)
+- Later experiments in this archive compare against the amount + night baseline, not the older five-feature set
 
 ### Commands (scripts)
 
