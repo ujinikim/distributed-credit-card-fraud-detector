@@ -15,6 +15,13 @@ from fraud_lens.ingest import load_paths_config
 if TYPE_CHECKING:
     from pyspark.sql import SparkSession
 
+# Minimum prior (card × merchant_category) tx count before trusting category z-score.
+PRIOR_CATEGORY_Z_MIN_TX = 5
+# Shrink category prior mean toward prior card mean: (n*mu_cat + tau*mu_card) / (n + tau).
+PRIOR_CATEGORY_SHRINK_TAU = 5.0
+# Damp raw category z when eligible: z * sqrt(n / (n + k)).
+PRIOR_CATEGORY_Z_DAMP_K = 5.0
+
 
 def _project_root() -> Path:
     """Project root (repo root): parent of src/."""
@@ -67,6 +74,8 @@ def run(
     - customer-to-merchant distance
     - merchant history features when benchmark columns are available
     - distance_from_prev_km, speed_from_prev_kmh
+    - prior-only amount stats per (card_id, merchant_category) with gated z-score,
+      shrunk mean, damped z, and log1p(prior category count)
     """
     config = load_paths_config()
     data_cfg = config.get("data", {})
@@ -133,6 +142,13 @@ def run(
         F.col("transaction_id"),
     )
     w_by_card_merchant_time_prior_rows = w_by_card_merchant_time.rowsBetween(
+        Window.unboundedPreceding, -1
+    )
+    w_by_card_category_time = Window.partitionBy("card_id", "merchant_category").orderBy(
+        F.col("event_time_unix"),
+        F.col("transaction_id"),
+    )
+    w_by_card_category_prior_rows = w_by_card_category_time.rowsBetween(
         Window.unboundedPreceding, -1
     )
 
@@ -229,6 +245,74 @@ def run(
                 F.col("prior_amount_zscore").isNull(),
                 F.lit(False),
             ).otherwise(F.col("prior_amount_zscore") >= F.lit(3.0)),
+        )
+    )
+
+    # Prior-only amount history per (card_id, merchant_category): gated z-score when n is large enough.
+    prior_tx_count_cc = F.count("amount").over(w_by_card_category_prior_rows)
+    prior_amount_sum_cc = F.sum("amount").over(w_by_card_category_prior_rows)
+    prior_amount_sumsq_cc = F.sum(F.pow(F.col("amount"), 2.0)).over(
+        w_by_card_category_prior_rows
+    )
+    prior_amount_mean_cc = prior_amount_sum_cc / prior_tx_count_cc
+    prior_amount_variance_cc = F.greatest(
+        (prior_amount_sumsq_cc / prior_tx_count_cc)
+        - F.pow(prior_amount_mean_cc, 2.0),
+        F.lit(0.0),
+    )
+    prior_amount_std_cc = F.sqrt(prior_amount_variance_cc)
+    eligible_cat_z = (prior_tx_count_cc >= F.lit(PRIOR_CATEGORY_Z_MIN_TX)) & (
+        prior_amount_std_cc > F.lit(0.0)
+    )
+    # Prior-only card mean is already on df; blend category mean toward it when n>0 (V2 shrinkage).
+    prior_amount_mean_card_category_shrunk = F.when(
+        prior_tx_count_cc > 0,
+        (
+            prior_tx_count_cc * prior_amount_mean_cc
+            + F.lit(PRIOR_CATEGORY_SHRINK_TAU) * F.col("prior_amount_mean_card")
+        )
+        / (prior_tx_count_cc + F.lit(PRIOR_CATEGORY_SHRINK_TAU)),
+    ).otherwise(F.col("prior_amount_mean_card"))
+    z_cat_raw = (F.col("amount") - prior_amount_mean_cc) / prior_amount_std_cc
+    z_cat_damp = F.sqrt(
+        prior_tx_count_cc.cast("double")
+        / (prior_tx_count_cc.cast("double") + F.lit(PRIOR_CATEGORY_Z_DAMP_K))
+    )
+    z_cat_shrunk = (F.col("amount") - prior_amount_mean_card_category_shrunk) / prior_amount_std_cc
+    df = (
+        df.withColumn("prior_tx_count_card_category", prior_tx_count_cc)
+        .withColumn("prior_amount_mean_card_category", prior_amount_mean_cc)
+        .withColumn("prior_amount_std_card_category", prior_amount_std_cc)
+        .withColumn(
+            "prior_amount_mean_card_category_shrunk",
+            prior_amount_mean_card_category_shrunk,
+        )
+        .withColumn(
+            "prior_amount_zscore_card_category",
+            F.when(eligible_cat_z, z_cat_raw).otherwise(
+                F.lit(None).cast(T.DoubleType())
+            ),
+        )
+        .withColumn(
+            "prior_amount_zscore_card_category_damped",
+            F.when(eligible_cat_z, z_cat_raw * z_cat_damp).otherwise(
+                F.lit(None).cast(T.DoubleType())
+            ),
+        )
+        .withColumn(
+            "prior_amount_zscore_card_category_shrunk",
+            F.when(eligible_cat_z, z_cat_shrunk).otherwise(
+                F.lit(None).cast(T.DoubleType())
+            ),
+        )
+        .withColumn("prior_category_zscore_eligible", eligible_cat_z)
+        .withColumn(
+            "low_history_card_category",
+            prior_tx_count_cc < F.lit(PRIOR_CATEGORY_Z_MIN_TX),
+        )
+        .withColumn(
+            "prior_category_log_prior_n",
+            F.log1p(prior_tx_count_cc.cast("double")),
         )
     )
 
@@ -357,6 +441,16 @@ def run(
         "prior_amount_std_card",
         "prior_amount_zscore",
         "is_amount_spike_prior",
+        "prior_tx_count_card_category",
+        "prior_amount_mean_card_category",
+        "prior_amount_std_card_category",
+        "prior_amount_mean_card_category_shrunk",
+        "prior_amount_zscore_card_category",
+        "prior_amount_zscore_card_category_damped",
+        "prior_amount_zscore_card_category_shrunk",
+        "prior_category_zscore_eligible",
+        "low_history_card_category",
+        "prior_category_log_prior_n",
         "customer_to_merchant_distance_km",
         "merchant_tx_count_last_24h",
         "merchant_prior_tx_count",
