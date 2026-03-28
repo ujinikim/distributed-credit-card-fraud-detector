@@ -14,6 +14,7 @@ if str(src) not in sys.path:
     sys.path.insert(0, str(src))
 
 from sparkov_eval.constants import FEATURE_SETS, TOP_K_VALUES
+from sparkov_eval.constants import THRESHOLD_CANDIDATES
 from sparkov_eval.data_prep import apply_time_split_and_sampling, build_model_df, ensure_gold_columns
 from sparkov_eval.two_stage_reranker import two_stage_rerank_topk
 
@@ -81,6 +82,11 @@ def parse_args() -> argparse.Namespace:
         default="100,500,1000,5000,10000",
         help="Comma-separated Top-K values to report.",
     )
+    parser.add_argument(
+        "--compute-full-metrics",
+        action="store_true",
+        help="Also compute validation/test PR AUC, ROC AUC, and best-threshold precision/recall/F1 for the two-stage final_score.",
+    )
     return parser.parse_args()
 
 
@@ -139,6 +145,8 @@ def main() -> None:
         alpha=args.alpha,
         topk_values=topk_values,
         logistic_class_weights=args.logistic_class_weights,
+        compute_validation_and_auc=args.compute_full_metrics,
+        threshold_candidates=THRESHOLD_CANDIDATES if args.compute_full_metrics else None,
     )
 
     print("Two-stage reranker results")
@@ -157,6 +165,21 @@ def main() -> None:
     for row in result["reranked_top_k_rows"]:
         print(
             f"  k={row['k']}: precision={row['precision']:.4f} recall={row['recall']:.4f} tp={row['tp']} rows={row['rows']}"
+        )
+
+    if result.get("full_metrics") is not None:
+        fm = result["full_metrics"]
+        print("\nTwo-stage full metrics (from final_score):")
+        print(
+            "  Val: "
+            f"PR AUC={fm['validation_pr_auc']:.4f} ROC AUC={fm['validation_roc_auc']:.4f} "
+            f"best_t={fm['best_threshold']:.2f} "
+            f"P={fm['validation_precision']:.4f} R={fm['validation_recall']:.4f} F1={fm['validation_f1']:.4f}"
+        )
+        print(
+            "  Test: "
+            f"PR AUC={fm['test_pr_auc']:.4f} ROC AUC={fm['test_roc_auc']:.4f} "
+            f"P={fm['test_precision']:.4f} R={fm['test_recall']:.4f} F1={fm['test_f1']:.4f}"
         )
 
     spark.stop()

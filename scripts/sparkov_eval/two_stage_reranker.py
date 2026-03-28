@@ -73,6 +73,8 @@ def two_stage_rerank_topk(
     alpha: float,
     topk_values: list[int],
     logistic_class_weights: bool = False,
+    compute_validation_and_auc: bool = False,
+    threshold_candidates: list[float] | None = None,
 ) -> dict[str, object]:
     """
     Train base LR + reranker GBT, create a final queue by reranking a top-N shortlist,
@@ -84,10 +86,13 @@ def two_stage_rerank_topk(
     """
 
     from pyspark.ml.classification import GBTClassifier, LogisticRegression
+    from pyspark.ml.evaluation import BinaryClassificationEvaluator
     from pyspark.ml.feature import VectorAssembler
     from pyspark.ml.functions import vector_to_array
     from pyspark.sql import functions as F
     from pyspark.sql.window import Window
+
+    from sparkov_eval.metrics import threshold_metrics
 
     if rerank_mode not in {"pure", "blended"}:
         raise ValueError("rerank_mode must be one of: 'pure', 'blended'")
@@ -96,6 +101,7 @@ def two_stage_rerank_topk(
 
     shortlist_n = int(shortlist_n)
     alpha = float(alpha)
+    threshold_candidates = threshold_candidates or []
 
     # --- Train / score base LR ---
     lr_assembler = VectorAssembler(inputCols=base_lr_feature_cols, outputCol="lr_features")
@@ -130,15 +136,16 @@ def two_stage_rerank_topk(
         lr_kwargs["weightCol"] = "weight"
     lr_model = LogisticRegression(**lr_kwargs).fit(lr_train_df)
 
-    lr_test_df = lr_assembled.where(F.col("split") == F.lit("test")).select(
-        "transaction_id", "event_time_unix", "label", "lr_features"
-    )
-    lr_scored = lr_model.transform(lr_test_df).select(
-        "transaction_id",
-        "event_time_unix",
-        "label",
-        vector_to_array("lr_probability")[1].alias("lr_score"),
-    )
+    def _score_lr(split_name: str):
+        split_df = lr_assembled.where(F.col("split") == F.lit(split_name)).select(
+            "transaction_id", "event_time_unix", "label", "lr_features"
+        )
+        return lr_model.transform(split_df).select(
+            "transaction_id",
+            "event_time_unix",
+            "label",
+            vector_to_array("lr_probability")[1].alias("lr_score"),
+        )
 
     # --- Train / score reranker GBT ---
     gbt_assembler = VectorAssembler(
@@ -157,15 +164,18 @@ def two_stage_rerank_topk(
         seed=42,
     ).fit(gbt_train_df)
 
-    gbt_test_df = gbt_assembled.where(F.col("split") == F.lit("test")).select(
-        "transaction_id", "event_time_unix", "label", "gbt_features"
-    )
-    gbt_scored = gbt_model.transform(gbt_test_df).select(
-        "transaction_id",
-        vector_to_array("probability")[1].alias("gbt_score"),
-    )
+    def _score_gbt(split_name: str):
+        split_df = gbt_assembled.where(F.col("split") == F.lit(split_name)).select(
+            "transaction_id", "event_time_unix", "label", "gbt_features"
+        )
+        return gbt_model.transform(split_df).select(
+            "transaction_id",
+            vector_to_array("probability")[1].alias("gbt_score"),
+        )
 
-    scored = lr_scored.join(gbt_scored, on="transaction_id", how="inner")
+    lr_test = _score_lr("test")
+    gbt_test = _score_gbt("test")
+    scored = lr_test.join(gbt_test, on="transaction_id", how="inner")
 
     max_k = int(max(topk_values)) if topk_values else 0
     if max_k <= 0:
@@ -250,6 +260,98 @@ def two_stage_rerank_topk(
         positives_total=positives_total,
     )
 
+    # --- Optional: compute PR AUC / ROC AUC / F1 by defining a final_score for all rows ---
+    full_metrics: dict[str, object] | None = None
+    if compute_validation_and_auc:
+        if not threshold_candidates:
+            raise ValueError("threshold_candidates must be provided when compute_validation_and_auc=True")
+
+        from pyspark.ml.functions import array_to_vector
+
+        def _final_scored_all(split_name: str):
+            lr_split = _score_lr(split_name)
+            gbt_split = _score_gbt(split_name)
+            split_scored = lr_split.join(gbt_split, on="transaction_id", how="inner")
+
+            shortlist_ids = (
+                split_scored.orderBy(
+                    F.desc("lr_score"),
+                    F.desc("event_time_unix"),
+                    F.asc("transaction_id"),
+                )
+                .limit(int(shortlist_n))
+                .select("transaction_id")
+                .withColumn("in_shortlist", F.lit(1))
+            )
+
+            split_scored = split_scored.join(shortlist_ids, on="transaction_id", how="left")
+            split_scored = split_scored.withColumn(
+                "in_shortlist", F.coalesce(F.col("in_shortlist"), F.lit(0))
+            )
+
+            if rerank_mode == "pure":
+                shortlist_score = F.col("gbt_score")
+            else:
+                shortlist_score = F.col("gbt_score") + F.lit(float(alpha)) * F.col("lr_score")
+
+            split_scored = split_scored.withColumn(
+                "final_score",
+                F.when(F.col("in_shortlist") == F.lit(1), shortlist_score).otherwise(
+                    F.col("lr_score")
+                ),
+            )
+
+            # BinaryClassificationEvaluator expects a rawPrediction column.
+            split_scored = split_scored.withColumn(
+                "rawPrediction",
+                array_to_vector(F.array(F.lit(1.0) - F.col("final_score"), F.col("final_score"))),
+            )
+
+            return split_scored.select(
+                "transaction_id",
+                "event_time_unix",
+                "label",
+                F.col("final_score").alias("score"),
+                "rawPrediction",
+            )
+
+        validation_scored = _final_scored_all("validation")
+        test_scored = _final_scored_all("test")
+
+        pr_evaluator = BinaryClassificationEvaluator(
+            labelCol="label",
+            rawPredictionCol="rawPrediction",
+            metricName="areaUnderPR",
+        )
+        roc_evaluator = BinaryClassificationEvaluator(
+            labelCol="label",
+            rawPredictionCol="rawPrediction",
+            metricName="areaUnderROC",
+        )
+
+        validation_pr_auc = pr_evaluator.evaluate(validation_scored)
+        validation_roc_auc = roc_evaluator.evaluate(validation_scored)
+        validation_rows = [threshold_metrics(validation_scored, t) for t in threshold_candidates]
+        best_validation = max(validation_rows, key=lambda row: row["f1"])
+
+        test_pr_auc = pr_evaluator.evaluate(test_scored)
+        test_roc_auc = roc_evaluator.evaluate(test_scored)
+        test_at_best = threshold_metrics(test_scored, best_validation["threshold"])
+
+        full_metrics = {
+            "validation_pr_auc": float(validation_pr_auc),
+            "validation_roc_auc": float(validation_roc_auc),
+            "best_threshold": float(best_validation["threshold"]),
+            "validation_precision": float(best_validation["precision"]),
+            "validation_recall": float(best_validation["recall"]),
+            "validation_f1": float(best_validation["f1"]),
+            "test_pr_auc": float(test_pr_auc),
+            "test_roc_auc": float(test_roc_auc),
+            "test_precision": float(test_at_best["precision"]),
+            "test_recall": float(test_at_best["recall"]),
+            "test_f1": float(test_at_best["f1"]),
+        }
+
     def _as_simple(metrics: list[TopKResult]) -> list[dict[str, object]]:
         return [
             {
@@ -268,5 +370,6 @@ def two_stage_rerank_topk(
         "shortlist_n": shortlist_n,
         "rerank_mode": rerank_mode,
         "alpha": alpha if rerank_mode == "blended" else None,
+        "full_metrics": full_metrics,
     }
 
