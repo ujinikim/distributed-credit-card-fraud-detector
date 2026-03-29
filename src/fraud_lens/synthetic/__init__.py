@@ -1,10 +1,10 @@
-"""Synthetic transaction data generator (Gaussian + optional anomalies)."""
+"""Synthetic fixture support for smoke tests and lightweight validation."""
 
-from fraud_lens.synthetic.generator import (
+from fraud_lens.synthetic.fixture import (
     GeneratorConfig,
     Transaction,
-    load_config,
     generate,
+    load_config,
     write_jsonl,
     run,
 )

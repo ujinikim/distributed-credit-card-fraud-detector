@@ -17,11 +17,12 @@ if str(src) not in sys.path:
 
 def main() -> None:
     """Download the configured Sparkov dataset file if it is not already present."""
-    from fraud_lens.ingest import load_sparkov_config
+    from fraud_lens.benchmark.sparkov import load_sparkov_config, resolve_sparkov_paths
 
     config = load_sparkov_config().get("sparkov", {})
+    paths = resolve_sparkov_paths(config)
     url = str(config["download_url"])
-    output_path = (project_root / config["download_path"]).resolve()
+    output_path = paths["download_path"]
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     if output_path.exists() and output_path.stat().st_size > 0:

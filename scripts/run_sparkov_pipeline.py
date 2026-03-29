@@ -15,20 +15,27 @@ def main() -> None:
     """Run the medallion pipeline against the normalized Sparkov benchmark dataset."""
     from pyspark.sql import SparkSession
 
-    from fraud_lens.bronze_to_silver import run as run_bronze_to_silver
-    from fraud_lens.ingest import load_sparkov_config, run as run_bronze_ingest
-    from fraud_lens.silver_to_gold import run as run_silver_to_gold
+    from fraud_lens.benchmark.sparkov import (
+        load_sparkov_config,
+        resolve_sparkov_paths,
+    )
+    from fraud_lens.pipeline import (
+        run_bronze_ingest,
+        run_gold_features,
+        run_silver_transform,
+    )
 
     config = load_sparkov_config().get("sparkov", {})
+    paths = resolve_sparkov_paths(config)
     spark_builder = SparkSession.builder.appName("FraudLens-Sparkov-Pipeline")
     for key, value in config.get("spark_runtime", {}).items():
         spark_builder = spark_builder.config(key, str(value))
     spark = spark_builder.getOrCreate()
 
-    raw_path = project_root / config.get("normalized_raw_path", "data/raw_sparkov")
-    bronze_path = project_root / config.get("bronze_path", "data/benchmark/bronze_sparkov")
-    silver_path = project_root / config.get("silver_path", "data/benchmark/silver_sparkov")
-    gold_path = project_root / config.get("gold_path", "data/benchmark/gold_sparkov")
+    raw_path = paths["normalized_raw_path"]
+    bronze_path = paths["bronze_path"]
+    silver_path = paths["silver_path"]
+    gold_path = paths["gold_path"]
 
     run_bronze_ingest(
         spark,
@@ -38,7 +45,7 @@ def main() -> None:
     )
     print(f"Bronze ingest complete. Output: {bronze_path.resolve()}")
 
-    df_silver = run_bronze_to_silver(
+    df_silver = run_silver_transform(
         spark,
         bronze_path=bronze_path,
         silver_path=silver_path,
@@ -48,7 +55,7 @@ def main() -> None:
         f"(rows={df_silver.count()})"
     )
 
-    df_gold = run_silver_to_gold(
+    df_gold = run_gold_features(
         spark,
         silver_path=silver_path,
         gold_path=gold_path,

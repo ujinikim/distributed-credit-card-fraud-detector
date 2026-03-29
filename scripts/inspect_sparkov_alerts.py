@@ -37,18 +37,18 @@ def main() -> None:
     from pyspark.sql import SparkSession
     from pyspark.sql import functions as F
 
-    from fraud_lens.ingest import load_sparkov_config
+    from fraud_lens.benchmark.sparkov import load_sparkov_config, resolve_sparkov_paths
 
     args = _parse_args()
     config = load_sparkov_config().get("sparkov", {})
+    paths = resolve_sparkov_paths(config)
     spark_builder = SparkSession.builder.appName("FraudLens-Sparkov-Alert-Inspect")
     for key, value in config.get("spark_runtime", {}).items():
         spark_builder = spark_builder.config(key, str(value))
     spark = spark_builder.getOrCreate()
 
     try:
-        gold_path = project_root / config.get("gold_path", "data/benchmark/gold_sparkov")
-        df = spark.read.parquet(str(gold_path.resolve()))
+        df = spark.read.parquet(str(paths["gold_path"]))
 
         feature_cols = (
             ["prior_amount_zscore", "amount_sum_last_1h"]

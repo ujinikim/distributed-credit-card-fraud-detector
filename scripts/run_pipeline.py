@@ -12,9 +12,12 @@ if str(src) not in sys.path:
 
 from pyspark.sql import SparkSession
 
-from fraud_lens.ingest import load_paths_config, run as run_bronze_ingest
-from fraud_lens.bronze_to_silver import run as run_bronze_to_silver
-from fraud_lens.silver_to_gold import run as run_silver_to_gold
+from fraud_lens.pipeline import (
+    load_paths_config,
+    run_bronze_ingest,
+    run_gold_features,
+    run_silver_transform,
+)
 
 
 def main() -> None:
@@ -32,7 +35,7 @@ def main() -> None:
     print(f"Bronze ingest complete. Output: {Path(bronze_path).resolve()}")
 
     # Bronze → Silver
-    df_silver = run_bronze_to_silver(spark)
+    df_silver = run_silver_transform(spark)
     silver_path = config.get("data", {}).get("silver", "data/silver")
     print(
         f"Silver transform complete. Output: {Path(silver_path).resolve()} "
@@ -40,7 +43,7 @@ def main() -> None:
     )
 
     # Silver → Gold
-    df_gold = run_silver_to_gold(spark)
+    df_gold = run_gold_features(spark)
     gold_path = config.get("data", {}).get("gold", "data/gold")
     print(
         f"Gold features complete. Output: {Path(gold_path).resolve()} "

@@ -80,7 +80,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--feature-set",
         default="amount_plus_night",
-        help="Feature set name from sparkov_eval.constants.FEATURE_SETS.",
+        help="Feature set name from fraud_lens.benchmark.sparkov.eval.constants.FEATURE_SETS.",
     )
     parser.add_argument(
         "--model-type",
@@ -145,17 +145,21 @@ def main() -> None:
     from pyspark.sql import SparkSession
     from pyspark.sql import functions as F
 
-    from fraud_lens.ingest import load_sparkov_config
-    from sparkov_eval.constants import FEATURE_SETS, THRESHOLD_CANDIDATES
-    from sparkov_eval.data_prep import (
+    from fraud_lens.benchmark.sparkov import load_sparkov_config, resolve_sparkov_paths
+    from fraud_lens.benchmark.sparkov.eval.constants import (
+        FEATURE_SETS,
+        THRESHOLD_CANDIDATES,
+    )
+    from fraud_lens.benchmark.sparkov.eval.data_prep import (
         apply_time_split_and_sampling,
         build_model_df,
         ensure_gold_columns,
     )
-    from sparkov_eval.metrics import evaluate_feature_set
+    from fraud_lens.benchmark.sparkov.eval.metrics import evaluate_feature_set
     scales: list[float] = [0.02] if args.fast else args.scales
 
     config = load_sparkov_config().get("sparkov", {})
+    paths = resolve_sparkov_paths(config)
     spark_builder = SparkSession.builder.appName("FraudLens-SparkJustificationBenchmark")
     for key, value in config.get("spark_runtime", {}).items():
         spark_builder = spark_builder.config(key, str(value))
@@ -166,10 +170,10 @@ def main() -> None:
             raise SystemExit(f"Unknown feature set: {args.feature_set!r}")
         feature_cols = list(FEATURE_SETS[args.feature_set])
 
-        gold_path = _project_root() / config.get("gold_path", "data/benchmark/gold_sparkov")
+        gold_path = paths["gold_path"]
 
         t_read_start = time.perf_counter()
-        raw = spark.read.parquet(str(gold_path.resolve()))
+        raw = spark.read.parquet(str(gold_path))
         df = ensure_gold_columns(raw)
         gold_rows = int(df.count())
         seconds_read = time.perf_counter() - t_read_start

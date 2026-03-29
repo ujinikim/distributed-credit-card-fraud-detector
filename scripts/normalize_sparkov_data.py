@@ -15,7 +15,11 @@ def main() -> None:
     """Create Spark session, normalize Sparkov benchmark data, and print the output path."""
     from pyspark.sql import SparkSession
 
-    from fraud_lens.ingest import load_sparkov_config, run_sparkov_ingest
+    from fraud_lens.benchmark.sparkov import (
+        load_sparkov_config,
+        normalize_sparkov_raw,
+        resolve_sparkov_paths,
+    )
 
     spark = (
         SparkSession.builder.appName("FraudLens-Normalize-Sparkov")
@@ -23,10 +27,10 @@ def main() -> None:
         .getOrCreate()
     )
     config = load_sparkov_config().get("sparkov", {})
-    output_path = config.get("normalized_raw_path", "data/raw_sparkov")
-    df = run_sparkov_ingest(spark)
+    output_path = resolve_sparkov_paths(config)["normalized_raw_path"]
+    df = normalize_sparkov_raw(spark)
     print(
-        f"Sparkov normalization complete. Output: {Path(output_path).resolve()} "
+        f"Sparkov normalization complete. Output: {output_path} "
         f"(rows={df.count()})"
     )
     spark.stop()

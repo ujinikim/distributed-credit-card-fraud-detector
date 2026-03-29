@@ -9,6 +9,11 @@
 | [reference/](reference/) | Synthetic data spec |
 | [archive/](archive/) | Historical experiment write-ups (full run log, feature findings) |
 
+Code layout:
+
+- [`../src/fraud_lens/`](../src/fraud_lens/) — reusable package code
+- [`../scripts/`](../scripts/) — runnable CLI entry points
+
 ## Reading order
 
 1. [architecture/medallion_layers.md](architecture/medallion_layers.md) — Bronze, Silver, Gold responsibilities and Silver contract

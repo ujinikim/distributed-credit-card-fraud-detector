@@ -13,10 +13,14 @@ src = project_root / "src"
 if str(src) not in sys.path:
     sys.path.insert(0, str(src))
 
-from sparkov_eval.constants import FEATURE_SETS, TOP_K_VALUES
-from sparkov_eval.constants import THRESHOLD_CANDIDATES
-from sparkov_eval.data_prep import apply_time_split_and_sampling, build_model_df, ensure_gold_columns
-from sparkov_eval.two_stage_reranker import two_stage_rerank_topk
+from fraud_lens.benchmark.sparkov.eval.constants import FEATURE_SETS, TOP_K_VALUES
+from fraud_lens.benchmark.sparkov.eval.constants import THRESHOLD_CANDIDATES
+from fraud_lens.benchmark.sparkov.eval.data_prep import (
+    apply_time_split_and_sampling,
+    build_model_df,
+    ensure_gold_columns,
+)
+from fraud_lens.benchmark.sparkov.eval.two_stage_reranker import two_stage_rerank_topk
 
 
 def parse_args() -> argparse.Namespace:
@@ -105,17 +109,18 @@ def _run_to_feature_set_name(run: int, *, is_lr: bool) -> str:
 def main() -> None:
     from pyspark.sql import SparkSession
 
-    from fraud_lens.ingest import load_sparkov_config
+    from fraud_lens.benchmark.sparkov import load_sparkov_config, resolve_sparkov_paths
 
     args = parse_args()
     config = load_sparkov_config().get("sparkov", {})
+    paths = resolve_sparkov_paths(config)
 
     spark_builder = SparkSession.builder.appName("FraudLens-TwoStageReranker")
     for key, value in config.get("spark_runtime", {}).items():
         spark_builder = spark_builder.config(key, str(value))
     spark = spark_builder.getOrCreate()
 
-    gold_path = project_root / config.get("gold_path", "data/benchmark/gold_sparkov")
+    gold_path = paths["gold_path"]
 
     topk_values = [int(x.strip()) for x in args.topk.split(",") if x.strip()]
 
@@ -125,7 +130,7 @@ def main() -> None:
     base_lr_feature_cols = list(FEATURE_SETS[base_feature_set])
     reranker_gbt_feature_cols = list(FEATURE_SETS[reranker_feature_set])
 
-    df = spark.read.parquet(str(gold_path.resolve()))
+    df = spark.read.parquet(str(gold_path))
     df = ensure_gold_columns(df)
     model_df = build_model_df(df)
     model_df = apply_time_split_and_sampling(
@@ -187,4 +192,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

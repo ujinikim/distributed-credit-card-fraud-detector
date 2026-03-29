@@ -10,15 +10,15 @@ src = project_root / "src"
 if str(src) not in sys.path:
     sys.path.insert(0, str(src))
 
-from sparkov_eval.cli import parse_args
-from sparkov_eval.constants import FEATURE_SETS, THRESHOLD_CANDIDATES
-from sparkov_eval.data_prep import (
+from fraud_lens.benchmark.sparkov.eval.cli import parse_args
+from fraud_lens.benchmark.sparkov.eval.constants import FEATURE_SETS, THRESHOLD_CANDIDATES
+from fraud_lens.benchmark.sparkov.eval.data_prep import (
     apply_time_split_and_sampling,
     build_model_df,
     ensure_gold_columns,
 )
-from sparkov_eval.k_sweep import run_category_k_sweep
-from sparkov_eval.metrics import evaluate_feature_set
+from fraud_lens.benchmark.sparkov.eval.k_sweep import run_category_k_sweep
+from fraud_lens.benchmark.sparkov.eval.metrics import evaluate_feature_set
 
 
 def _print_split_summary(model_df, train_fraction, validation_fraction, test_fraction):
@@ -53,18 +53,18 @@ def main() -> None:
     from pyspark.sql import Row, SparkSession
     from pyspark.sql import functions as F
 
-    from fraud_lens.ingest import load_sparkov_config
+    from fraud_lens.benchmark.sparkov import load_sparkov_config, resolve_sparkov_paths
 
     args = parse_args()
     config = load_sparkov_config().get("sparkov", {})
+    paths = resolve_sparkov_paths(config)
     spark_builder = SparkSession.builder.appName("FraudLens-Sparkov-Eval")
     for key, value in config.get("spark_runtime", {}).items():
         spark_builder = spark_builder.config(key, str(value))
     spark = spark_builder.getOrCreate()
 
     try:
-        gold_path = project_root / config.get("gold_path", "data/benchmark/gold_sparkov")
-        df = spark.read.parquet(str(gold_path.resolve()))
+        df = spark.read.parquet(str(paths["gold_path"]))
         df = ensure_gold_columns(df)
         model_df = build_model_df(df)
         model_df = apply_time_split_and_sampling(

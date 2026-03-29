@@ -1,6 +1,5 @@
-"""Bronze → Silver: clean, type, validate."""
+"""Compatibility exports for Bronze-to-Silver imports."""
 
-from fraud_lens.bronze_to_silver.transform import run
+from fraud_lens.pipeline.silver import run, run_silver_transform
 
-__all__ = ["run"]
-
+__all__ = ["run", "run_silver_transform"]

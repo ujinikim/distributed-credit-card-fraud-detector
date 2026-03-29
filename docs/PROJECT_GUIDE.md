@@ -2,9 +2,16 @@
 
 Quick navigation and commands for the FraudLens Sparkov workflow. **Docs index:** [README.md](README.md).
 
+Mental model: `src/fraud_lens/` holds the reusable implementation; `scripts/` holds the commands you run.
+
 ## Where things live
 
-- `src/fraud_lens/silver_to_gold/transform.py` — Gold feature engineering (card × category, low-history handling)
+- `scripts/run_sparkov_pipeline.py` — Default benchmark pipeline entry point
+- `scripts/run_pipeline.py` — Generic/local pipeline entry point
+- `src/fraud_lens/pipeline/gold.py` — Canonical Gold feature engineering
+- `src/fraud_lens/pipeline/silver.py` — Canonical Silver transform
+- `src/fraud_lens/pipeline/bronze.py` — Canonical Bronze ingest
+- `src/fraud_lens/benchmark/sparkov/ingest.py` — Sparkov normalization into canonical raw records
 - `scripts/evaluate_sparkov_model.py` — Model training/evaluation CLI and Top-K metrics
 - `scripts/inspect_sparkov_alerts.py` — Error analysis for top-ranked alerts
 - `docs/archive/sparkov_model_eval.md` — Full run-by-run experiment archive
@@ -14,6 +21,9 @@ Quick navigation and commands for the FraudLens Sparkov workflow. **Docs index:*
 
 - Rebuild Sparkov medallion layers:
   - `python scripts/run_sparkov_pipeline.py`
+
+- Normalize Sparkov source data only:
+  - `python scripts/normalize_sparkov_data.py`
 
 - Evaluate one feature set:
   - `python scripts/evaluate_sparkov_model.py --feature-set amount_plus_night --model-type logistic`
@@ -29,6 +39,9 @@ Quick navigation and commands for the FraudLens Sparkov workflow. **Docs index:*
 
 - Inspect top alerts:
   - `python scripts/inspect_sparkov_alerts.py --feature-set amount_plus_night --model-type logistic`
+
+- Generate a small synthetic fixture:
+  - `python scripts/generate_synthetic_data.py`
 
 ## Terminology
 

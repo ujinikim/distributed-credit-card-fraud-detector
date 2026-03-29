@@ -12,7 +12,7 @@ if str(src) not in sys.path:
 
 from pyspark.sql import SparkSession
 
-from fraud_lens.ingest import load_paths_config, run as run_bronze_ingest
+from fraud_lens.pipeline import load_paths_config, run_bronze_ingest
 
 
 def main() -> None:
